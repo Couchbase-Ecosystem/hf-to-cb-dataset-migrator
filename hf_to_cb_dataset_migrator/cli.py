@@ -18,7 +18,7 @@ def main():
               help='Download mode (optional).')
 @click.option('--dynamic-modules-path', default=None, help='Path to dynamic modules (optional).')
 @click.option('--data-files', default=None, multiple=True, help='Path(s) to source data file(s) (optional).')
-@click.option('--token', is_flag=True, default=False, help='Use authentication token for private datasets.')
+@click.option('--token',default=None, help='Use authentication token for private datasets.')
 @click.option('--json-output', is_flag=True, help='Output the configurations in JSON format.')
 def list_configs_cmd(path, revision, download_config, download_mode, dynamic_modules_path,
                      data_files, token, json_output):
