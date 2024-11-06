@@ -66,9 +66,9 @@ jobs:
       - name: Build Linux Binary with Docker
         if: matrix.os_name == 'linux'
         run: |
-          mkdir -p ./tmp/output
+          mkdir -p /tmp/output
           docker buildx build --platform linux/${{ matrix.arch_name }} \
-            --output type=local,dest=./tmp/output \
+            --output type=local,dest=/tmp/output \
             --build-arg ARCH=${{ matrix.arch_name }} \
             --build-arg VERSION=${{ env.VERSION }} \
             -t hf_to_cb_dataset_migrator:linux-${{ matrix.arch_name }} -f Dockerfile.linux .
