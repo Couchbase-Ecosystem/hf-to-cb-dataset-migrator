@@ -56,16 +56,17 @@ jobs:
       # Setup QEMU and Docker Buildx for Linux builds
       - name: Setup QEMU
         if: matrix.os_name == 'linux'
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       - name: Setup Docker Buildx
         if: matrix.os_name == 'linux'
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       # Build Linux binaries using Docker
       - name: Build Linux Binary with Docker
         if: matrix.os_name == 'linux'
         run: |
+          mkdir -p ./tmp/output
           docker buildx build --platform linux/${{ matrix.arch_name }} \
             --output type=local,dest=./tmp/output \
             --build-arg ARCH=${{ matrix.arch_name }} \
