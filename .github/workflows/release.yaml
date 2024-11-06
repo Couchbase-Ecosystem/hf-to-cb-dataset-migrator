@@ -31,7 +31,7 @@ jobs:
             arch: x64
             arch_name: amd64
             extension: tar.gz
-          - os: macos-12-arm64
+          - os: macos-latest
             os_name: darwin
             arch: arm64
             arch_name: arm64
