@@ -139,7 +139,7 @@ jobs:
           # Sign the main executable
           codesign --force --options runtime --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
           # Sign all dynamic libraries and executables
-          find dist/hf_to_cb_dataset_migrator -type f \( -name "*.so" -or -name "*.dylib" -or -perm -u=x \) -exec codesign --force --options runtime --sign "Developer ID Application: Your Name ($APPLE_TEAM_ID)" {} \;
+          find dist/hf_to_cb_dataset_migrator -type f \( -name "*.so" -or -name "*.dylib" -or -perm -u=x \) -exec codesign --force --options runtime --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" {} \;
           # Verify the code-signing
           codesign --verify --deep --strict --verbose=2 dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
 
