@@ -13,12 +13,12 @@ jobs:
         include:
           - os: windows-latest
             os_name: windows
-            arch: x86_64
+            arch: x64
             arch_name: amd64
             extension: zip
           - os: macos-latest
             os_name: darwin
-            arch: x86_64
+            arch: x64
             arch_name: amd64
             extension: tar.gz
           - os: macos-12-arm64
@@ -28,7 +28,7 @@ jobs:
             extension: tar.gz
           - os: ubuntu-latest
             os_name: linux
-            arch: x86_64
+            arch: x64
             arch_name: amd64
             extension: tar.gz
           - os: ubuntu-latest
@@ -52,9 +52,9 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11.10'
+          python-version: '3.9'
           architecture: ${{ matrix.arch }}
 
       - name: Install dependencies
