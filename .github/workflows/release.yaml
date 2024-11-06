@@ -163,7 +163,7 @@ jobs:
           APP_NAME="hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
           xcrun notarytool submit "$APP_NAME.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
           # Staple the notarization ticket
-          xcrun stapler staple "$APP_NAME.zip"
+          #xcrun stapler staple "$APP_NAME.zip"
 
       # Compress Linux Binary
       - name: Compress Linux Binary
