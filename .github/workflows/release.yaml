@@ -67,7 +67,7 @@ jobs:
         if: matrix.os_name == 'linux'
         run: |
           docker buildx build --platform linux/${{ matrix.arch_name }} \
-            --output type=local,dest=./output \
+            --output type=local,dest=./tmp/output \
             --build-arg ARCH=${{ matrix.arch_name }} \
             --build-arg VERSION=${{ env.VERSION }} \
             -t hf_to_cb_dataset_migrator:linux-${{ matrix.arch_name }} -f Dockerfile.linux .
@@ -170,7 +170,7 @@ jobs:
         if: matrix.os_name == 'linux'
         run: |
           APP_NAME="hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
-          tar -czvf "$APP_NAME.${{ matrix.extension }}" -C output/dist hf_to_cb_dataset_migrator
+          tar -czvf "$APP_NAME.${{ matrix.extension }}" -C /tmp/output/dist hf_to_cb_dataset_migrator
 
       # Upload artifact
       - name: Upload artifact
