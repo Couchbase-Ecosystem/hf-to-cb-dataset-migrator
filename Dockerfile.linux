@@ -1,6 +1,6 @@
 # Use an appropriate base image for the architecture
-ARG ARCH=amd64
-FROM --platform=linux/$ARCH python:3.11-slim-bullseye
+ARG ARCH
+FROM --platform=linux/$ARCH python:3.11-slim-bullseye AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -21,3 +21,9 @@ RUN pip install pyinstaller
 RUN pyinstaller hf_to_cb_dataset_migrator/cli.py --name hf_to_cb_dataset_migrator
 
 # The built application will be in /app/dist
+
+# Second Stage: Copy `dist` folder only
+FROM scratch AS export-stage
+
+# Copy only the dist folder from the builder stage
+COPY --from=builder /app/dist /dist
