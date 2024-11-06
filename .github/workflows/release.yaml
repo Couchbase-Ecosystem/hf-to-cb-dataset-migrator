@@ -11,6 +11,16 @@ jobs:
     strategy:
       matrix:
         include:
+          - os: ubuntu-latest
+            os_name: linux
+            arch: x64
+            arch_name: amd64
+            extension: tar.gz
+          - os: ubuntu-latest
+            os_name: linux
+            arch: arm64
+            arch_name: arm64
+            extension: tar.gz
           - os: windows-latest
             os_name: windows
             arch: x64
@@ -23,16 +33,6 @@ jobs:
             extension: tar.gz
           - os: macos-12-arm64
             os_name: darwin
-            arch: arm64
-            arch_name: arm64
-            extension: tar.gz
-          - os: ubuntu-latest
-            os_name: linux
-            arch: x64
-            arch_name: amd64
-            extension: tar.gz
-          - os: ubuntu-latest
-            os_name: linux
             arch: arm64
             arch_name: arm64
             extension: tar.gz
@@ -51,27 +51,77 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Set up Python
+      # Setup QEMU and Docker Buildx for Linux builds
+      - name: Setup QEMU
+        if: matrix.os_name == 'linux'
+        uses: docker/setup-qemu-action@v2
+
+      - name: Setup Docker Buildx
+        if: matrix.os_name == 'linux'
+        uses: docker/setup-buildx-action@v2
+
+      # Build Linux binaries using Docker
+      - name: Build Linux Binary with Docker
+        if: matrix.os_name == 'linux'
+        run: |
+          docker buildx build --platform linux/${{ matrix.arch_name }} \
+            --output type=local,dest=./output \
+            --build-arg ARCH=${{ matrix.arch_name }} \
+            --build-arg VERSION=${{ env.VERSION }} \
+            -t hf_to_cb_dataset_migrator:linux-${{ matrix.arch_name }} -f Dockerfile.linux .
+
+      # Build Windows binary on Windows runner
+      - name: Set up Python on Windows
+        if: runner.os == 'Windows'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           architecture: ${{ matrix.arch }}
 
-      - name: Install dependencies
+      - name: Install dependencies on Windows
+        if: runner.os == 'Windows'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build with PyInstaller in directory mode
+      - name: Build with PyInstaller on Windows
+        if: runner.os == 'Windows'
+        run: |
+          pyinstaller your_script.py --name hf_to_cb_dataset_migrator
+
+      - name: Compress Windows Binary
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $APP_NAME = "hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
+          Compress-Archive -Path dist\hf_to_cb_dataset_migrator\* -DestinationPath "$APP_NAME.${{ matrix.extension }}"
+
+      # Build macOS binaries using macOS runners
+      - name: Set up Python on macOS
+        if: matrix.os_name == 'darwin'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: ${{ matrix.arch }}
+
+      - name: Install dependencies on macOS
+        if: matrix.os_name == 'darwin'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller on macOS
+        if: matrix.os_name == 'darwin'
         env:
-          ARCHFLAGS: ${{ runner.os == 'macOS' && matrix.arch == 'arm64' && '-arch arm64' || '' }}
+          ARCHFLAGS: ${{ matrix.arch == 'arm64' && '-arch arm64' || '' }}
         run: |
           pyinstaller your_script.py --name hf_to_cb_dataset_migrator
 
       # Code-signing and notarization steps for macOS
       - name: Code-sign on macOS
-        if: runner.os == 'macOS'
+        if: matrix.os_name == 'darwin'
         env:
           CERTIFICATE: ${{ secrets.APPLE_DEV_CERT }}
           CERT_PASSWORD: ${{ secrets.APPLE_DEV_CERT_PASSPHRASE }}
@@ -90,50 +140,36 @@ jobs:
           # Verify the code-signing
           codesign --verify --deep --strict --verbose=2 dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
 
-      # Compression and notarization for macOS
-      - name: Compress Application Directory on macOS
-        if: runner.os == 'macOS'
+      # Compress macOS Binary
+      - name: Compress macOS Binary
+        if: matrix.os_name == 'darwin'
         shell: bash
-        env:
-          VERSION: ${{ env.VERSION }}
         run: |
-          APP_NAME="hf_to_cb_dataset_migrator_${VERSION}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
+          APP_NAME="hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
           cd dist
           zip -r "../$APP_NAME.zip" hf_to_cb_dataset_migrator
 
+      # Notarize the macOS binary
       - name: Notarize the macOS binary
-        if: runner.os == 'macOS'
+        if: matrix.os_name == 'darwin'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          VERSION: ${{ env.VERSION }}
         run: |
-          APP_NAME="hf_to_cb_dataset_migrator_${VERSION}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
+          APP_NAME="hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
           xcrun notarytool submit "$APP_NAME.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
           # Staple the notarization ticket
           xcrun stapler staple "$APP_NAME.zip"
 
-      # Compression for Linux
-      - name: Compress Application Directory on Linux
-        if: runner.os == 'Linux'
-        shell: bash
-        env:
-          VERSION: ${{ env.VERSION }}
+      # Compress Linux Binary
+      - name: Compress Linux Binary
+        if: matrix.os_name == 'linux'
         run: |
-          APP_NAME="hf_to_cb_dataset_migrator_${VERSION}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
-          tar -czvf "$APP_NAME.${{ matrix.extension }}" -C dist hf_to_cb_dataset_migrator
+          APP_NAME="hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
+          tar -czvf "$APP_NAME.${{ matrix.extension }}" -C output/dist hf_to_cb_dataset_migrator
 
-      # Compression for Windows
-      - name: Compress Application Directory on Windows
-        if: runner.os == 'Windows'
-        shell: powershell
-        env:
-          VERSION: ${{ env.VERSION }}
-        run: |
-          $APP_NAME = "hf_to_cb_dataset_migrator_$Env:VERSION_${{ matrix.os_name }}_${{ matrix.arch_name }}"
-          Compress-Archive -Path dist\hf_to_cb_dataset_migrator\* -DestinationPath "$APP_NAME.${{ matrix.extension }}"
-
+      # Upload artifact
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
@@ -141,6 +177,7 @@ jobs:
           path: |
             hf_to_cb_dataset_migrator_*_${{ matrix.os_name }}_${{ matrix.arch_name }}.*
 
+      # Create Release
       - name: Create Release
         if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         id: create_release
@@ -153,6 +190,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Upload Release Asset
       - name: Upload Release Asset
         if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-release-asset@v1
