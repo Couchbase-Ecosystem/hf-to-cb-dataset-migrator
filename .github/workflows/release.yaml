@@ -130,16 +130,16 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          echo "$CERTIFICATE" | base64 --decode > certificate.p12
-          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security import certificate.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
-          security set-keychain-settings -lut 21600 build.keychain
-          security list-keychains -s build.keychain
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          echo "$CERTIFICATE" | base64 --decode > /tmp/certificate.p12
+          security create-keychain -p $KEYCHAIN_PASSWORD build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p $KEYCHAIN_PASSWORD build.keychain
+          security import /tmp/certificate.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k $KEYCHAIN_PASSWORD build.keychain
           # Sign the main executable
           codesign --force --options runtime --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
           # Sign all dynamic libraries and executables
-          find dist/hf_to_cb_dataset_migrator -type f \( -name "*.so" -or -name "*.dylib" -or -perm -u=x \) -exec codesign --force --options runtime --sign "Developer ID Application: Your Name (Team ID)" {} \;
+          find dist/hf_to_cb_dataset_migrator -type f \( -name "*.so" -or -name "*.dylib" -or -perm -u=x \) -exec codesign --force --options runtime --sign "Developer ID Application: Your Name ($APPLE_TEAM_ID)" {} \;
           # Verify the code-signing
           codesign --verify --deep --strict --verbose=2 dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
 
