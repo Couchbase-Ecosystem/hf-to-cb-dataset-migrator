@@ -18,6 +18,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install pyinstaller
 
 # Build the application using PyInstaller
-RUN pyinstaller your_script.py --name hf_to_cb_dataset_migrator
+RUN pyinstaller hf_to_cb_dataset_migrator/cli.py --name hf_to_cb_dataset_migrator
 
 # The built application will be in /app/dist

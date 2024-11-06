@@ -88,7 +88,7 @@ jobs:
       - name: Build with PyInstaller on Windows
         if: runner.os == 'Windows'
         run: |
-          pyinstaller your_script.py --name hf_to_cb_dataset_migrator
+          pyinstaller hf_to_cb_dataset_migrator/cli.py --name hf_to_cb_dataset_migrator
 
       - name: Compress Windows Binary
         if: runner.os == 'Windows'
@@ -117,7 +117,7 @@ jobs:
         env:
           ARCHFLAGS: ${{ matrix.arch == 'arm64' && '-arch arm64' || '' }}
         run: |
-          pyinstaller your_script.py --name hf_to_cb_dataset_migrator
+          pyinstaller hf_to_cb_dataset_migrator/cli.py --name hf_to_cb_dataset_migrator
 
       # Code-signing and notarization steps for macOS
       - name: Code-sign on macOS
