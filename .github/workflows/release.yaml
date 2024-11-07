@@ -148,7 +148,7 @@ jobs:
         shell: bash
         run: |
           APP_NAME="hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
-          tar -czvf "$APP_NAME.${{ matrix.extension }}" -C ./dist/hf_to_cb_dataset_migrator
+          tar -czvf "$APP_NAME.${{ matrix.extension }}" ./dist/hf_to_cb_dataset_migrator
           cd dist
           zip -r "../$APP_NAME.zip" hf_to_cb_dataset_migrator
 
