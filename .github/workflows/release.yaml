@@ -146,9 +146,9 @@ jobs:
 
           APP_NAME="hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
           cd dist
-          tar -czvf "$APP_NAME.${{ matrix.extension }}" hf_to_cb_dataset_migrator
+          tar -czvf "../$APP_NAME.${{ matrix.extension }}" hf_to_cb_dataset_migrator
           zip -r "../$APP_NAME.zip" hf_to_cb_dataset_migrator
-
+          cd ..
           
           xcrun notarytool submit "$APP_NAME.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
           # Staple the notarization ticket
