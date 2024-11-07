@@ -141,6 +141,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k $KEYCHAIN_PASSWORD build.keychain
           # Sign the main executable
           codesign --deep --options runtime --timestamp --verbose --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
+          echo "codesigned"
           # Verify the code-signing
           codesign --verify --deep --strict --verbose dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
 
