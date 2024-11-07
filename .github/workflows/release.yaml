@@ -115,17 +115,10 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build with PyInstaller on macOS
+      - name: Build with PyInstaller on macOS and Code-sign  and notarise
         if: matrix.os_name == 'darwin'
         env:
           ARCHFLAGS: ${{ matrix.arch == 'arm64' && '-arch arm64' || '' }}
-        run: |
-          pyinstaller hf_to_cb_dataset_migrator/cli.py --name hf_to_cb_dataset_migrator
-
-      # Code-signing and notarization steps for macOS
-      - name: Code-sign on macOS
-        if: matrix.os_name == 'darwin'
-        env:
           CERTIFICATE: ${{ secrets.APPLE_DEV_CERT }}
           CERT_PASSWORD: ${{ secrets.APPLE_DEV_CERT_PASSPHRASE }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
@@ -133,15 +126,17 @@ jobs:
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          
           echo "$CERTIFICATE" | base64 --decode > /tmp/certificate.p12
           security create-keychain -p $KEYCHAIN_PASSWORD build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p $KEYCHAIN_PASSWORD build.keychain
           security import /tmp/certificate.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k $KEYCHAIN_PASSWORD build.keychain
-          # Sign the main executable
-          codesign --deep --options runtime --timestamp --verbose=2 --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
-          echo "codesigned"
+          
+          # build the binary and signin with certificate
+          pyinstaller hf_to_cb_dataset_migrator/cli.py --name hf_to_cb_dataset_migrator --codesign-identity "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)"
+          
           # Verify the code-signing
           codesign --verify --deep --strict --verbose dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
 
