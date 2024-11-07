@@ -138,9 +138,7 @@ jobs:
           security import /tmp/certificate.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k $KEYCHAIN_PASSWORD build.keychain
           # Sign the main executable
-          codesign --force --options runtime --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
-          # Sign all dynamic libraries and executables
-          find dist/hf_to_cb_dataset_migrator -type f \( -name "*.so" -or -name "*.dylib" -or -perm -u=x \) -exec codesign --force --options runtime --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" {} \;
+          codesign --deep --force --verbose --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
           # Verify the code-signing
           codesign --verify --deep --strict --verbose=2 dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
 
@@ -150,6 +148,7 @@ jobs:
         shell: bash
         run: |
           APP_NAME="hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
+          tar -czvf "$APP_NAME.${{ matrix.extension }}" -C ./dist/hf_to_cb_dataset_migrator
           cd dist
           zip -r "../$APP_NAME.zip" hf_to_cb_dataset_migrator
 
@@ -165,6 +164,7 @@ jobs:
           xcrun notarytool submit "$APP_NAME.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
           # Staple the notarization ticket
           #xcrun stapler staple "$APP_NAME.zip"
+          rm -rf "$APP_NAME.zip"
 
       # Compress Linux Binary
       - name: Compress Linux Binary
