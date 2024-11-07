@@ -142,7 +142,7 @@ jobs:
           # Sign the main executable
           codesign --deep --options runtime --timestamp --verbose --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
           # Verify the code-signing
-          codesign --verify --deep --strict --verbose=2 dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
+          codesign --verify --deep --strict --verbose dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
 
           APP_NAME="hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
           cd dist
