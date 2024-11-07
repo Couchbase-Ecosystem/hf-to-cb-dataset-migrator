@@ -129,6 +129,8 @@ jobs:
           CERTIFICATE: ${{ secrets.APPLE_DEV_CERT }}
           CERT_PASSWORD: ${{ secrets.APPLE_DEV_CERT_PASSPHRASE }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           echo "$CERTIFICATE" | base64 --decode > /tmp/certificate.p12
@@ -138,29 +140,16 @@ jobs:
           security import /tmp/certificate.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k $KEYCHAIN_PASSWORD build.keychain
           # Sign the main executable
-          codesign --deep --force --verbose --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
+          codesign --deep --options runtime --timestamp --verbose --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
           # Verify the code-signing
           codesign --verify --deep --strict --verbose=2 dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
 
-      # Compress macOS Binary
-      - name: Compress macOS Binary
-        if: matrix.os_name == 'darwin'
-        shell: bash
-        run: |
           APP_NAME="hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
-          tar -czvf "$APP_NAME.${{ matrix.extension }}" ./dist/hf_to_cb_dataset_migrator
           cd dist
+          tar -czvf "$APP_NAME.${{ matrix.extension }}" hf_to_cb_dataset_migrator
           zip -r "../$APP_NAME.zip" hf_to_cb_dataset_migrator
 
-      # Notarize the macOS binary
-      - name: Notarize the macOS binary
-        if: matrix.os_name == 'darwin'
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          APP_NAME="hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
+          
           xcrun notarytool submit "$APP_NAME.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
           # Staple the notarization ticket
           #xcrun stapler staple "$APP_NAME.zip"
