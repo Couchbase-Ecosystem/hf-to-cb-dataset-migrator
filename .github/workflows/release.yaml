@@ -135,8 +135,13 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k $KEYCHAIN_PASSWORD build.keychain
           
           # build the binary and signin with certificate
-          pyinstaller hf_to_cb_dataset_migrator/cli.py --name hf_to_cb_dataset_migrator --codesign-identity "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)"
+          pyinstaller hf_to_cb_dataset_migrator/cli.py --name hf_to_cb_dataset_migrator
           
+
+          codesign --force --options runtime --timestamp --entitlements ./entitlements.plist \
+          --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" \
+          dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
+
           # Verify the code-signing
           codesign --verify --deep --strict --verbose dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
 
