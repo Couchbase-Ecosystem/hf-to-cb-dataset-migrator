@@ -135,7 +135,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k $KEYCHAIN_PASSWORD build.keychain
           
           # build the binary and signin with certificate
-          pyinstaller hf_to_cb_dataset_migrator/cli.py --name hf_to_cb_dataset_migrator --target-arch ${{ matrix.arch }}
+          pyinstaller hf_to_cb_dataset_migrator/cli.py --name hf_to_cb_dataset_migrator --target-arch ${{ matrix.arch == 'arm64' && 'arm64' || 'x86_64' }}
           
           find dist/hf_to_cb_dataset_migrator -type f \( -perm -111 -o -name "*.dylib" -o -name "*.so" \) -exec \
           codesign --remove-signature {} \;  
