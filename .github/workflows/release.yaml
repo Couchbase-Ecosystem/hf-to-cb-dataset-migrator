@@ -144,13 +144,17 @@ jobs:
           --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" \
           dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
 
+          find dist/hf_to_cb_dataset_migrator -type f \( -perm -111 -o -name "*.dylib" -o -name "*.so" \) -exec \
+          codesign --force --options runtime --timestamp --entitlements ./entitlements.plist \
+          --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)"  {} \; 
+
           # Verify the code-signing
-          codesign --verify --deep --strict --verbose dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
+          codesign --verify --strict --verbose dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
 
           APP_NAME="hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
           cd dist
           tar -czvf "../$APP_NAME.${{ matrix.extension }}" hf_to_cb_dataset_migrator
-          zip -r "../$APP_NAME.zip" hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
+          ditto -c -k --keepParent hf_to_cb_dataset_migrator "../$APP_NAME.zip"
           cd ..
           
           xcrun notarytool submit "$APP_NAME.zip" --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
