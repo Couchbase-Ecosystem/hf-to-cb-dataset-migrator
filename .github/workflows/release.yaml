@@ -119,8 +119,8 @@ jobs:
           arch -x86_64 python3 -m venv venv_x86
           source venv_x86/bin/activate
           arch -x86_64 python3 -m pip install --upgrade pip
-          arch -x86_64 python3 -mpip install -r requirements.txt
-          arch -x86_64 python3 -mpip install pyinstaller
+          arch -x86_64 python3 -m pip install -r requirements.txt
+          arch -x86_64 python3 -m pip install pyinstaller
 
       - name: Install dependencies on macOS (for arm64 architecture)
         if: matrix.os_name == 'darwin' && matrix.arch == 'arm64'
