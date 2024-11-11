@@ -186,6 +186,7 @@ jobs:
           name: ${{ matrix.os_name }}_${{ matrix.arch_name }}
           path: |
             hf_to_cb_dataset_migrator_*_${{ matrix.os_name }}_${{ matrix.arch_name }}.*
+            .chglog/*
 
   release:
     needs: build
@@ -204,7 +205,7 @@ jobs:
         run: |
           go install github.com/git-chglog/git-chglog/cmd/git-chglog@v0.15.4
           # Generate the changelog using git-chglog and store it in a temporary file
-          git-chglog -c ./.chglog/config-action.yml -o /tmp/changelog.md
+          git-chglog -c ./artifacts/.chglog/config-action.yml -o /tmp/changelog.md
 
       - name: Create Release and Upload Assets
         uses: ncipollo/release-action@v1
