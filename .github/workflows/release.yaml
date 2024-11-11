@@ -163,14 +163,19 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           path: ./artifacts
+      
+      - name: Generate Changelog
+        run: |
+          go install github.com/git-chglog/git-chglog/cmd/git-chglog@v0.15.4
+          # Generate the changelog using git-chglog and store it in a temporary file
+          git-chglog -c ./.chglog/config-action.yml -o /tmp/changelog.md
 
       - name: Create Release and Upload Assets
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ github.ref }}
           name: Release ${{ needs.build.outputs.VERSION }}
-          body: |
-            Release notes here
+          bodyFile: /tmp/changelog.md
           artifacts: ./artifacts/**
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
