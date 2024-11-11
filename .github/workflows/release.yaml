@@ -136,8 +136,31 @@ jobs:
           security unlock-keychain -p $KEYCHAIN_PASSWORD build.keychain
           security import /tmp/certificate.p12 -k build.keychain -P "$CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k $KEYCHAIN_PASSWORD build.keychain
-          pyinstaller hf_to_cb_dataset_migrator/cli.py --name hf_to_cb_dataset_migrator --codesign-identity "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)"
+          
+          # build the binary and signin with certificate
+          # Conditional to set architecture
+          if [ "${{ matrix.arch }}" = "x64" ]; then
+            arch -x86_64 pyinstaller hf_to_cb_dataset_migrator/cli.py --name hf_to_cb_dataset_migrator
+          else
+            pyinstaller hf_to_cb_dataset_migrator/cli.py --name hf_to_cb_dataset_migrator
+          fi
+          
+          find dist/hf_to_cb_dataset_migrator -type f \( -perm -111 -o -name "*.dylib" -o -name "*.so" \) -exec \
+          codesign --remove-signature {} \;  
+
+          codesign --force --options runtime --timestamp --entitlements ./entitlements.plist \
+          --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)" \
+          dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
+
+          find dist/hf_to_cb_dataset_migrator -type f \( -perm -111 -o -name "*.dylib" -o -name "*.so" \) -exec \
+          codesign --force --options runtime --timestamp --entitlements ./entitlements.plist \
+          --sign "Developer ID Application: Couchbase, Inc. ($APPLE_TEAM_ID)"  {} \; 
+
+          # Verify the code-signing
+
+          
           codesign --verify --strict --verbose dist/hf_to_cb_dataset_migrator/hf_to_cb_dataset_migrator
+          
           APP_NAME="hf_to_cb_dataset_migrator_${{ env.VERSION }}_${{ matrix.os_name }}_${{ matrix.arch_name }}"
           cd dist
           tar -czvf "../$APP_NAME.${{ matrix.extension }}" hf_to_cb_dataset_migrator
