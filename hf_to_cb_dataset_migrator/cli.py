@@ -1,11 +1,12 @@
-# my_cli/cli.py
+# hf_to_cb_dataset_migrator/cli.py
 
 import click
 import json
-from migration import DatasetMigrator
+import os
+from hf_to_cb_dataset_migrator.migration import DatasetMigrator
 from typing import Any
 
-@click.group()
+@click.group(context_settings=dict(help_option_names=["-h", "--help"]))
 def main():
     """CLI tool to interact with Hugging Face datasets and migrate them to Couchbase."""
     pass
@@ -84,7 +85,7 @@ def list_splits_cmd(path, config_name, data_files, download_config, download_mod
 @main.command()
 @click.option('--path', required=True, help='Path or name of the dataset.')
 @click.option('--name', default=None, help='Configuration name of the dataset (optional).')
-@click.option('--data-dir', default=None, help='Directory with the data files (optional).')
+#@click.option('--data-dir', default=None, help='Directory with the data files (optional).')
 @click.option('--data-files', default=None, multiple=True, help='Path(s) to source data file(s) (optional).')
 @click.option('--split', default=None, help='Which split of the data to load (optional).')
 @click.option('--cache-dir', default=None, help='Cache directory to store the datasets (optional).')
@@ -112,7 +113,9 @@ def list_splits_cmd(path, config_name, data_files, download_config, download_mod
 @click.option('--cb-scope', default=None, help='Couchbase scope name (optional).')
 @click.option('--cb-collection', default=None, help='Couchbase collection name (optional).')
 def migrate(
-    path, name, data_dir, data_files, split, cache_dir, 
+    path, name, 
+    #data_dir, 
+    data_files, split, cache_dir, 
     #features, 
     download_config, download_mode,
     verification_mode, keep_in_memory, save_infos, revision, token, streaming, num_proc, storage_options,
@@ -135,7 +138,7 @@ def migrate(
         cb_collection=cb_collection,
         id_fields=id_fields,
         name=name,
-        data_dir=data_dir,
+        #data_dir=data_dir,
         data_files=data_files,
         split=split,
         cache_dir=cache_dir,
@@ -158,4 +161,5 @@ def migrate(
         click.echo("Migration failed.")
 
 if __name__ == '__main__':
-    main()
+    prog_name = "cbmigrate hugging-face" if os.getenv('RUN_FROM_CBMIGRATE', "false") == "true" else None
+    main(prog_name=prog_name)

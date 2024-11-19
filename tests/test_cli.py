@@ -1,98 +1,116 @@
-# tests/test_cli.py
+# test_cli.py
 
 import unittest
-from click.testing import CliRunner
 from unittest.mock import patch, MagicMock
-import json
+from click.testing import CliRunner
 from hf_to_cb_dataset_migrator.cli import main
+from hf_to_cb_dataset_migrator.migration import DatasetMigrator
+
 
 class TestCLI(unittest.TestCase):
-    @patch('my_cli.cli.DatasetMigrator')
-    def test_migrate_with_all_parameters(self, mock_migrator_class):
-        # Mock the migrator instance
-        mock_migrator = mock_migrator_class.return_value
-        mock_migrator.migrate_dataset.return_value = True
+    def setUp(self):
+        self.runner = CliRunner()
 
-        runner = CliRunner()
-        result = runner.invoke(main, [
-            'migrate',
-            '--path', 'dataset',
-            '--name', 'config1',
-            '--data-dir', '/path/to/data_dir',
-            '--data-files', '/path/to/file1', '/path/to/file2',
-            '--split', 'train',
-            '--cache-dir', '/path/to/cache',
-            '--features', 'your_features',
-            '--download-config', 'your_download_config',
-            '--download-mode', 'force_redownload',
-            '--verification-mode', 'all_checks',
-            '--keep-in-memory',
-            '--save-infos',
-            '--revision', 'main',
-            '--token', 'your_token',
-            '--no-streaming',
-            '--num-proc', '4',
-            '--storage-options', '{"option_key": "option_value"}',
-            '--trust-remote-code',
-            '--id-fields', 'id,title',
-            '--cb-url', 'couchbase://localhost',
-            '--cb-username', 'username',
-            '--cb-password', 'password',
-            '--cb-bucket', 'bucket',
-            '--cb-scope', 'scope',
-            '--cb-collection', 'collection',
-            '--api-key', 'api_key_value',
-            '--config-kwargs', 'key1=value1', 'key2=value2'
-        ])
+    @patch('hf_to_cb_dataset_migrator.cli.DatasetMigrator')
+    def test_list_configs_cmd(self, mock_migrator_class):
+        mock_migrator = MagicMock()
+        mock_migrator.list_configs.return_value = ['config1', 'config2']
+        mock_migrator_class.return_value = mock_migrator
+
+        result = self.runner.invoke(
+            main,
+            ['list-configs', '--path', 'test_dataset']
+        )
+
         self.assertEqual(result.exit_code, 0)
-        mock_migrator_class.assert_called_with(api_key='api_key_value')
+        self.assertIn("Available configurations for 'test_dataset':", result.output)
+        self.assertIn("- config1", result.output)
+        self.assertIn("- config2", result.output)
+        mock_migrator.list_configs.assert_called_once_with(
+            'test_dataset',
+        )
+
+    @patch('hf_to_cb_dataset_migrator.cli.DatasetMigrator')
+    def test_list_splits_cmd(self, mock_migrator_class):
+        mock_migrator = MagicMock()
+        mock_migrator.list_splits.return_value = ['train', 'test', 'validation']
+        mock_migrator_class.return_value = mock_migrator
+
+        result = self.runner.invoke(
+            main,
+            ['list-splits', '--path', 'test_dataset', '--name', 'config1']
+        )
+        print(result.output)
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Available splits for dataset 'test_dataset' with config 'config1':", result.output)
+        self.assertIn("- train", result.output)
+        self.assertIn("- test", result.output)
+        self.assertIn("- validation", result.output)
+        mock_migrator.list_splits.assert_called_once_with(
+            'test_dataset',
+            config_name='config1',
+        )
+
+    @patch('hf_to_cb_dataset_migrator.cli.DatasetMigrator')
+    def test_migrate_cmd(self, mock_migrator_class):
+        mock_migrator = MagicMock()
+        mock_migrator.migrate_dataset.return_value = True
+        mock_migrator_class.return_value = mock_migrator
+
+        # Mock input prompts for Couchbase credentials
+        inputs = '\n'.join(['couchbase://localhost', 'user', 'pass', 'bucket'])
+
+        result = self.runner.invoke(
+            main,
+            ['migrate', '--path', 'test_dataset', '--id-fields', 'id'],
+            input=inputs
+        )
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Starting migration of dataset 'test_dataset' to Couchbase bucket 'bucket'...", result.output)
+        self.assertIn("Migration completed successfully.", result.output)
         mock_migrator.migrate_dataset.assert_called_once()
-        self.assertIn('Migration completed successfully.', result.output)
 
-    @patch('my_cli.cli.DatasetMigrator')
-    def test_migrate_invalid_config(self, mock_migrator_class):
-        # Mock the get_dataset_config_names function
-        with patch('my_cli.cli.get_dataset_config_names') as mock_get_configs:
-            mock_get_configs.return_value = ['config1', 'config2']
-            mock_migrator = mock_migrator_class.return_value
+    @patch('hf_to_cb_dataset_migrator.cli.DatasetMigrator')
+    def test_migrate_cmd_failure(self, mock_migrator_class):
+        mock_migrator = MagicMock()
+        mock_migrator.migrate_dataset.return_value = False
+        mock_migrator_class.return_value = mock_migrator
 
-            runner = CliRunner()
-            result = runner.invoke(main, [
-                'migrate',
-                '--path', 'dataset',
-                '--name', 'invalid_config',
-                '--cb-url', 'couchbase://localhost',
-                '--cb-username', 'user',
-                '--cb-password', 'pass',
-                '--cb-bucket', 'bucket'
-            ])
-            self.assertEqual(result.exit_code, 0)
-            mock_get_configs.assert_called_once()
-            self.assertIn("Invalid configuration name 'invalid_config'. Available configurations are: ['config1', 'config2']", result.output)
-            mock_migrator.migrate_dataset.assert_not_called()
+        # Mock input prompts for Couchbase credentials
+        inputs = '\n'.join(['couchbase://localhost', 'user', 'pass', 'bucket'])
 
-    @patch('my_cli.cli.DatasetMigrator')
-    def test_migrate_invalid_split(self, mock_migrator_class):
-        # Mock the get_dataset_config_names and get_dataset_split_names functions
-        with patch('my_cli.cli.get_dataset_config_names') as mock_get_configs, \
-             patch('my_cli.cli.get_dataset_split_names') as mock_get_splits:
-            mock_get_configs.return_value = ['config1']
-            mock_get_splits.return_value = ['train', 'test']
-            mock_migrator = mock_migrator_class.return_value
+        result = self.runner.invoke(
+            main,
+            ['migrate', '--path', 'test_dataset', '--id-fields', 'id'],
+            input=inputs
+        )
 
-            runner = CliRunner()
-            result = runner.invoke(main, [
-                'migrate',
-                '--path', 'dataset',
-                '--name', 'config1',
-                '--split', 'invalid_split',
-                '--cb-url', 'couchbase://localhost',
-                '--cb-username', 'user',
-                '--cb-password', 'pass',
-                '--cb-bucket', 'bucket'
-            ])
-            self.assertEqual(result.exit_code, 0)
-            mock_get_configs.assert_called_once()
-            mock_get_splits.assert_called_once()
-            self.assertIn("Invalid split name 'invalid_split'. Available splits are: ['train', 'test']", result.output)
-            mock_migrator.migrate_dataset.assert_not_called()
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Starting migration of dataset 'test_dataset' to Couchbase bucket 'bucket'...", result.output)
+        self.assertIn("Migration failed.", result.output)
+        mock_migrator.migrate_dataset.assert_called_once()
+
+    def test_main_help(self):
+        result = self.runner.invoke(main, ['--help'])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("CLI tool to interact with Hugging Face datasets and migrate them to Couchbase.", result.output)
+
+    def test_list_configs_help(self):
+        result = self.runner.invoke(main, ['list-configs', '--help'])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("List all configuration names for a given dataset.", result.output)
+
+    def test_list_splits_help(self):
+        result = self.runner.invoke(main, ['list-splits', '--help'])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("List all available splits for a given dataset and configuration.", result.output)
+
+    def test_migrate_help(self):
+        result = self.runner.invoke(main, ['migrate', '--help'])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Migrate datasets from Hugging Face to Couchbase.", result.output)
+
+
+if __name__ == '__main__':
+    unittest.main()

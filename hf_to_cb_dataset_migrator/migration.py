@@ -1,83 +1,147 @@
-# my_cli/migration.py
-
-import couchbase.collection
-from datasets import load_dataset, get_dataset_config_names, get_dataset_split_names
-from datasets.utils.logging import set_verbosity_error
-from datasets.download import DownloadConfig
-from datasets.download.download_manager import DownloadMode
-from datasets.utils.info_utils import VerificationMode
-from datasets.features import Features
-from datasets.utils import Version
-from datasets import DatasetDict, Dataset, IterableDatasetDict, IterableDataset, Split
-import couchbase
-from couchbase.cluster import Cluster
-from couchbase.options import ClusterOptions, KnownConfigProfiles
-from couchbase.auth import PasswordAuthenticator
-from couchbase.exceptions import CouchbaseException, DocumentExistsException
-from couchbase.result import MultiMutationResult
-from datetime import timedelta
-import uuid
 import logging
+import uuid
+import time
+from datetime import timedelta
 from typing import Any, Dict, List, Union, Optional, Sequence, Mapping
 
+from couchbase.auth import PasswordAuthenticator
+from couchbase.cluster import Cluster
+from couchbase.collection import Collection
+from couchbase.management.collections import CollectionManager, CollectionSpec
+from couchbase.exceptions import CouchbaseException, DocumentExistsException, ScopeAlreadyExistsException, CollectionAlreadyExistsException
+from couchbase.options import ClusterOptions, KnownConfigProfiles
+from couchbase.result import MultiMutationResult
+from datasets import DatasetDict, IterableDatasetDict, Split
+from datasets import load_dataset, get_dataset_config_names, get_dataset_split_names
+from datasets.download import DownloadConfig, DownloadMode
+from datasets.features import Features
+from datasets.utils import Version
+from datasets.utils.info_utils import VerificationMode
+from datasets.utils.logging import set_verbosity_error
+
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
 
 class DatasetMigrator:
     def __init__(self, token: Optional[str] = None):
         """
-        Initializes the DatasetMigrator with optional API key for Hugging Face.
+        Initializes the DatasetMigrator with an optional Hugging Face token.
 
         :param token: Hugging Face Token for accessing private datasets (optional)
         """
         self.token = token
-        self.cluster = None
-        self.collection = None
+        self.cluster: Optional[Cluster] = None
+        self.collection: Optional[Collection] = None
 
-    def connect(self, cb_url: str, cb_username: str, cb_password: str, couchbase_bucket: str,
-                cb_scope: Optional[str] = None, cb_collection: Optional[str] = None):
-        """Establishes a connection to the Couchbase cluster and gets the collection."""
-        cluster_opts = ClusterOptions(
-            PasswordAuthenticator(cb_username, cb_password),
-        )
-        cluster_opts.apply_profile(KnownConfigProfiles.WanDevelopment)
-        self.cluster = Cluster(cb_url, cluster_opts)
-        self.cluster.wait_until_ready(timedelta(seconds=60))  # Wait until cluster is ready
-        bucket = self.cluster.bucket(couchbase_bucket)
+    def connect(
+        self,
+        cb_url: str,
+        cb_username: str,
+        cb_password: str,
+        couchbase_bucket: str,
+        cb_scope: Optional[str] = None,
+        cb_collection: Optional[str] = None,
+    ) -> None:
+        """
+        Establishes a connection to the Couchbase cluster and gets the collection.
+        Creates the scope and collection if they do not exist.
+        """
+        try:
+            cluster_opts = ClusterOptions(PasswordAuthenticator(cb_username, cb_password))
+            cluster_opts.apply_profile(KnownConfigProfiles.WanDevelopment)
+            self.cluster = Cluster(cb_url, cluster_opts)
+            self.cluster.wait_until_ready(timedelta(seconds=60))  # Wait until cluster is ready
+            bucket = self.cluster.bucket(couchbase_bucket)
 
-        # Get the collection
-        if cb_scope and cb_collection:
-            scope = bucket.scope(cb_scope)
-            self.collection = scope.collection(cb_collection)
-        else:
-            self.collection = bucket.default_collection()
+            # Get the collection manager
+            collection_manager = bucket.collections()
 
-    def close(self):
+            if cb_scope and cb_collection:
+                # Check if scope exists
+                scopes = collection_manager.get_all_scopes()
+                scope_names = [scope.name for scope in scopes]
+                if cb_scope not in scope_names:
+                    logger.info(f"Scope '{cb_scope}' does not exist. Creating scope.")
+                    try:
+                        collection_manager.create_scope(cb_scope)
+                    except ScopeAlreadyExistsException:
+                        logger.info(f"Scope '{cb_scope}' already exists.")
+
+                    # Need to retrieve scopes again after creation
+                    scopes = collection_manager.get_all_scopes()
+
+                # Now check if collection exists in the scope
+                # Find the scope
+                for scope in scopes:
+                    if scope.name == cb_scope:
+                        break
+                else:
+                    raise Exception(f"Scope '{cb_scope}' not found after creation.")
+
+                collection_names = [collection.name for collection in scope.collections]
+                if cb_collection not in collection_names:
+                    logger.info(f"Collection '{cb_collection}' does not exist in scope '{cb_scope}'. Creating collection.")
+                    collection_spec = CollectionSpec(cb_collection, scope_name=cb_scope)
+                    try:
+                        collection_manager.create_collection(collection_spec)
+                    except CollectionAlreadyExistsException:
+                        logger.info(f"Collection '{cb_collection}' already exists in scope '{cb_scope}'.")
+
+                    # Wait until the collection is ready
+                    timeout = 30  # seconds
+                    start_time = time.time()
+                    while True:
+                        scopes = collection_manager.get_all_scopes()
+                        for scope in scopes:
+                            if scope.name == cb_scope:
+                                collection_names = [collection.name for collection in scope.collections]
+                                if cb_collection in collection_names:
+                                    break
+                        else:
+                            time.sleep(1)
+                            if time.time() - start_time > timeout:
+                                raise Exception(f"Collection '{cb_collection}' not available after creation.")
+                            continue
+                        break
+
+                # Get the scope and collection
+                scope = bucket.scope(cb_scope)
+                self.collection = scope.collection(cb_collection)
+            else:
+                self.collection = bucket.default_collection()
+        except CouchbaseException as e:
+            logger.error(f"Failed to connect to Couchbase cluster: {e}")
+            raise
+
+    def close(self) -> None:
         """Closes the connection to the Couchbase cluster."""
         if self.cluster:
             self.cluster.close()
             self.cluster = None
             self.collection = None
 
-    def list_configs(self, path: str,
-                     revision: Union[str, Version, None] = None,
-                     download_config: Optional[Dict] = None,
-                     download_mode: Union[DownloadMode, str, None] = None,
-                     dynamic_modules_path: Optional[str] = None,
-                     data_files: Union[Dict, List, str, None] = None,
-                     **config_kwargs: Any) -> Optional[List[str]]:
+    def list_configs(
+        self,
+        path: str,
+        revision: Union[str, Version, None] = None,
+        download_config: Optional[Dict] = None,
+        download_mode: Union[DownloadMode, str, None] = None,
+        dynamic_modules_path: Optional[str] = None,
+        data_files: Union[Dict, List, str, None] = None,
+        **config_kwargs: Any,
+    ) -> Optional[List[str]]:
         """
         Lists all configuration names for a specified dataset.
-        Parameters:
-            path (str): The path or name of the dataset.
-            revision (Union[str, Version, None], optional): The version or revision of the dataset script to load.
-            download_config (Optional[Dict], optional): Dictionary of download configuration parameters.
-            download_mode (Union[DownloadMode, str, None], optional): Specifies the download mode.
-            dynamic_modules_path (Optional[str], optional): Path to dynamic modules for custom processing.
-            data_files (Union[Dict, List, str, None], optional): Paths to source data files.
-            config_kwargs (Any): Additional keyword arguments for dataset configuration.
 
-        Returns:
-            Optional[List[str]]: A list of configuration names if successful; None if an error occurs.
+        :param path: The path or name of the dataset.
+        :param revision: The version or revision of the dataset script to load.
+        :param download_config: Dictionary of download configuration parameters.
+        :param download_mode: Specifies the download mode.
+        :param dynamic_modules_path: Path to dynamic modules for custom processing.
+        :param data_files: Paths to source data files.
+        :param config_kwargs: Additional keyword arguments for dataset configuration.
+        :return: A list of configuration names if successful; None if an error occurs.
         """
         try:
             set_verbosity_error()  # Suppress warnings
@@ -99,27 +163,27 @@ class DatasetMigrator:
             logger.error(f"An error occurred while fetching configs: {e}")
             return None
 
-    def list_splits(self, path: str,
-                    config_name: Optional[str] = None,
-                    data_files: Union[str, Sequence[str], Mapping[str, Union[str, Sequence[str]]], None] = None,
-                    download_config: Optional[Dict] = None,
-                    download_mode: Union[DownloadMode, str, None] = None,
-                    revision: Union[str, Version, None] = None,
-                    **config_kwargs: Any) -> Optional[List[str]]:
+    def list_splits(
+        self,
+        path: str,
+        config_name: Optional[str] = None,
+        data_files: Union[str, Sequence[str], Mapping[str, Union[str, Sequence[str]]], None] = None,
+        download_config: Optional[Dict] = None,
+        download_mode: Union[DownloadMode, str, None] = None,
+        revision: Union[str, Version, None] = None,
+        **config_kwargs: Any,
+    ) -> Optional[List[str]]:
         """
-        List all available splits for a given dataset and configuration.
+        Lists all available splits for a given dataset and configuration.
 
-        Parameters:
-            path (str): Path or name of the dataset.
-            config_name (str, optional): Configuration name of the dataset.
-            data_files (Union[Dict, List, str, None], optional): Path(s) to source data file(s).
-            download_config (Optional[Dict], optional): Specific download configuration parameters.
-            download_mode (Union[DownloadMode, str, None], optional): Specifies the download mode.
-            revision (Union[str, Version, None], optional): Version of the dataset script to load.
-            config_kwargs (Any): Additional keyword arguments for configuration.
-
-        Returns:
-            Optional[List[str]]: A list of split names if successful; None if an error occurs.
+        :param path: Path or name of the dataset.
+        :param config_name: Configuration name of the dataset.
+        :param data_files: Path(s) to source data file(s).
+        :param download_config: Specific download configuration parameters.
+        :param download_mode: Specifies the download mode.
+        :param revision: Version of the dataset script to load.
+        :param config_kwargs: Additional keyword arguments for configuration.
+        :return: A list of split names if successful; None if an error occurs.
         """
         try:
             set_verbosity_error()  # Suppress warnings
@@ -134,7 +198,7 @@ class DatasetMigrator:
                 download_config=DownloadConfig(**download_config) if download_config else None,
                 download_mode=download_mode,
                 revision=revision,
-                **config_kwargs
+                **config_kwargs,
             )
             return splits
         except Exception as e:
@@ -156,7 +220,7 @@ class DatasetMigrator:
         data_files: Optional[Union[str, Sequence[str], Mapping[str, Union[str, Sequence[str]]]]] = None,
         split: Optional[Union[str, Split]] = None,
         cache_dir: Optional[str] = None,
-        #features: Optional[Features] = None,
+        features: Optional[Features] = None,
         download_config: Optional[Dict] = None,
         download_mode: Optional[Union[DownloadMode, str]] = None,
         verification_mode: Optional[Union[VerificationMode, str]] = None,
@@ -167,48 +231,45 @@ class DatasetMigrator:
         num_proc: Optional[int] = None,
         storage_options: Optional[Dict] = None,
         trust_remote_code: Optional[bool] = None,
+        batch_size: int = 1000,
         **config_kwargs: Any,
     ) -> bool:
         """
         Migrates a Hugging Face dataset to Couchbase using batch insertion.
 
-        This function accepts all parameters from the `load_dataset` function to customize dataset loading.
-
-        Parameters:
-            path (str): Path or name of the dataset.
-            cb_url (str): Couchbase cluster URL (e.g., couchbase://localhost).
-            cb_username (str): Username for Couchbase authentication.
-            cb_password (str): Password for Couchbase authentication.
-            couchbase_bucket (str): Couchbase bucket to store data.
-            cb_scope (str, optional): Couchbase scope name.
-            cb_collection (str, optional): Couchbase collection name.
-            id_fields (str): Comma-separated list of field names to use as document ID.
-            name (str, optional): Configuration name of the dataset.
-            data_dir (str, optional): Directory with the data files.
-            data_files (Union[Dict, List, str, None], optional): Path(s) to source data file(s).
-            split (str, optional): Which split of the data to load.
-            cache_dir (str, optional): Cache directory to store the datasets.
-            features (Optional[Features], optional): Set of features to use.
-            download_config (Optional[Dict], optional): Specific download configuration parameters.
-            download_mode (Union[DownloadMode, str, None], optional): Specifies the download mode.
-            verification_mode (str, optional): Verification mode.
-            keep_in_memory (bool, optional): Whether to keep the dataset in memory.
-            save_infos (bool, default=False): Whether to save dataset information.
-            revision (Union[str, Version, None], optional): Version of the dataset script to load.
-            streaming (bool, default=False): Whether to load the dataset in streaming mode.
-            num_proc (int, optional): Number of processes to use.
-            storage_options (Dict, optional): Storage options for remote filesystems.
-            trust_remote_code (bool, optional): Allow loading arbitrary code from the dataset repository.
-            config_kwargs (Any): Additional keyword arguments for dataset configuration.
-
-        Returns:
-            bool: True if migration is successful, False otherwise.
+        :param path: Path or name of the dataset.
+        :param cb_url: Couchbase cluster URL (e.g., couchbase://localhost).
+        :param cb_username: Username for Couchbase authentication.
+        :param cb_password: Password for Couchbase authentication.
+        :param couchbase_bucket: Couchbase bucket to store data.
+        :param cb_scope: Couchbase scope name.
+        :param cb_collection: Couchbase collection name.
+        :param id_fields: Comma-separated list of field names to use as document ID.
+        :param name: Configuration name of the dataset.
+        :param data_dir: Directory with the data files.
+        :param data_files: Path(s) to source data file(s).
+        :param split: Which split(s) of the data to load.
+        :param cache_dir: Cache directory to store the datasets.
+        :param features: Set of features to use.
+        :param download_config: Specific download configuration parameters.
+        :param download_mode: Specifies the download mode.
+        :param verification_mode: Verification mode.
+        :param keep_in_memory: Whether to keep the dataset in memory.
+        :param save_infos: Whether to save dataset information.
+        :param revision: Version of the dataset script to load.
+        :param streaming: Whether to load the dataset in streaming mode.
+        :param num_proc: Number of processes to use.
+        :param storage_options: Storage options for remote filesystems.
+        :param trust_remote_code: Allow loading arbitrary code from the dataset repository.
+        :param batch_size: Number of documents to insert per batch.
+        :param config_kwargs: Additional keyword arguments for dataset configuration.
+        :return: True if migration is successful, False otherwise.
         """
         try:
             # Include token if provided
             if self.token:
                 config_kwargs['token'] = self.token
-            print(config_kwargs)
+
             # Prepare parameters for load_dataset
             load_kwargs = {
                 'path': path,
@@ -228,7 +289,7 @@ class DatasetMigrator:
                 'num_proc': num_proc,
                 'storage_options': storage_options,
                 'trust_remote_code': trust_remote_code,
-                **config_kwargs
+                **config_kwargs,
             }
 
             # Remove None values
@@ -262,53 +323,28 @@ class DatasetMigrator:
                 else:
                     return str(uuid.uuid4())
 
+            # Validate id_fields before processing
+            if id_fields_list:
+                missing_fields = [field for field in id_fields_list if field not in dataset.column_names]
+                if missing_fields:
+                    raise ValueError(f"The following id_fields are not present in the dataset: {missing_fields}")
+
             # If dataset is a dict (multiple splits), iterate over each split
             if isinstance(dataset, (DatasetDict, IterableDatasetDict)):
                 for split_name, split_dataset in dataset.items():
-                    print(f"Processing split '{split_name}'...")
-                    batch = {}
-                    for example in split_dataset:
-                        doc_id = construct_doc_id(example)
-                        # Include split name in the document
-                        example_with_split = dict(example)
-                        example_with_split['split'] = split_name
-                        batch[doc_id] = example_with_split
-                        total_records += 1
-
-                        # Batch insert every 1000 documents
-                        if len(batch) >= 1000:
-                            self.insert_multi(batch)
-                            batch.clear()
-                            print(f"{total_records} records migrated...")
-                    # Insert remaining documents in batch
-                    if batch:
-                        self.insert_multi(batch)
-                        print(f"{total_records} records migrated...")
-                        batch.clear()
+                    logger.info(f"Processing split '{split_name}'...")
+                    self._process_and_insert_split(
+                        split_dataset, split_name, construct_doc_id, batch_size, total_records
+                    )
             else:
                 # Dataset is a single split
-                split_name = str(split) if split else 'unspecified'
-                print(f"Processing split '{split_name}'...")
-                batch = {}
-                for example in dataset:
-                    doc_id = construct_doc_id(example)
-                    example_with_split = dict(example)
-                    example_with_split['split'] = split_name
-                    batch[doc_id] = example_with_split
-                    total_records += 1
+                split_name = str(split) if split else None
+                logger.info(f"Processing split '{split_name}'...")
+                self._process_and_insert_split(
+                    dataset, split_name, construct_doc_id, batch_size, total_records
+                )
 
-                    # Batch insert every 1000 documents
-                    if len(batch) >= 1000:
-                        self.insert_multi(batch)
-                        batch.clear()
-                        print(f"{total_records} records migrated...")
-                # Insert remaining documents in batch
-                if batch:
-                    self.insert_multi(batch)
-                    print(f"{total_records} records migrated...")
-                    batch.clear()
-
-            print(f"Total records migrated: {total_records}")
+            logger.info(f"Total records migrated: {total_records}")
             return True
         except Exception as e:
             logger.error(f"An error occurred during migration: {e}")
@@ -316,18 +352,55 @@ class DatasetMigrator:
         finally:
             self.close()
 
-    def insert_multi(self, batch):
+    def _process_and_insert_split(
+        self,
+        split_dataset,
+        split_name: Union[str, None],
+        construct_doc_id,
+        batch_size: int,
+        total_records: int,
+    ) -> None:
+        """
+        Processes and inserts a dataset split into Couchbase.
+
+        :param split_dataset: The dataset split to process.
+        :param split_name: Name of the split.
+        :param construct_doc_id: Function to construct document IDs.
+        :param batch_size: Number of documents to insert per batch.
+        :param total_records: Total records processed so far.
+        """
+        batch = {}
+        for example in split_dataset:
+            doc_id = construct_doc_id(example)
+            # Include split name in the document
+            example_with_split = dict(example)
+            example_with_split['split'] = split_name
+            batch[doc_id] = example_with_split
+            total_records += 1
+
+            # Batch insert when batch size is reached
+            if len(batch) >= batch_size:
+                self.insert_multi(batch)
+                batch.clear()
+                logger.info(f"{total_records} records migrated...")
+
+        # Insert remaining documents in batch
+        if batch:
+            self.insert_multi(batch)
+            logger.info(f"{total_records} records migrated...")
+            batch.clear()
+
+    def insert_multi(self, batch: Dict[str, Any]) -> None:
         """
         Performs a batch insert operation using insert_multi.
 
-        :param batch: A dictionary where keys are document IDs and values are documents
+        :param batch: A dictionary where keys are document IDs and values are documents.
         """
         try:
             result: MultiMutationResult = self.collection.insert_multi(batch)
-        except Exception as e:
-            logger.error(f"Write error: {e}")
-            msg = f"Failed to write documents to Couchbase. Error: {e}"
-            raise Exception(msg) from e
+        except CouchbaseException as e:
+            logger.error(f"Couchbase write error: {e}")
+            raise
 
         if not result.all_ok and result.exceptions:
             duplicate_ids = []
@@ -336,10 +409,9 @@ class DatasetMigrator:
                 if isinstance(ex, DocumentExistsException):
                     duplicate_ids.append(doc_id)
                 else:
-                    other_errors.append({"id": doc_id, "exception": ex})
+                    other_errors.append({"id": doc_id, "exception": str(ex)})
             if duplicate_ids:
-                msg = f"IDs '{', '.join(duplicate_ids)}' already exist in the document store."
-                raise Exception(msg)
+                logger.warning(f"Documents with IDs already exist: {', '.join(duplicate_ids)}")
             if other_errors:
-                msg = f"Failed to write documents to Couchbase. Errors:\n{other_errors}"
-                raise Exception(msg)
+                logger.error(f"Errors occurred during batch insert: {other_errors}")
+                raise Exception(f"Failed to write some documents to Couchbase: {other_errors}") 
