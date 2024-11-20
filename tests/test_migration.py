@@ -3,11 +3,14 @@
 import unittest
 from unittest.mock import patch, MagicMock, Mock
 from hf_to_cb_dataset_migrator.migration import DatasetMigrator
-from couchbase.exceptions import CouchbaseException, DocumentExistsException
-from datasets import DatasetDict, Dataset, Split
-from datasets.features import Features
-from datasets.utils.version import Version
-from typing import List, Dict, Any
+from couchbase.exceptions import (
+    CouchbaseException,
+    DocumentExistsException,
+    ScopeAlreadyExistsException,
+    CollectionAlreadyExistsException,
+)
+from datasets import Dataset
+from typing import Any
 
 
 class TestDatasetMigrator(unittest.TestCase):
@@ -71,11 +74,10 @@ class TestDatasetMigrator(unittest.TestCase):
             cb_username='user',
             cb_password='pass',
             couchbase_bucket='bucket',
-            cb_scope=None,
-            cb_collection=None,
+            cb_scope='test_scope',
+            cb_collection='test_collection',
             id_fields='id',
             name=None,
-            data_dir=None,
             data_files=None,
             split=None,
             cache_dir=None,
@@ -123,11 +125,10 @@ class TestDatasetMigrator(unittest.TestCase):
                 cb_username='user',
                 cb_password='pass',
                 couchbase_bucket='bucket',
-                cb_scope=None,
-                cb_collection=None,
+                cb_scope='test_scope',
+                cb_collection='test_collection',
                 id_fields='id',
                 name=None,
-                data_dir=None,
                 data_files=None,
                 split=None,
                 cache_dir=None,
@@ -195,20 +196,163 @@ class TestDatasetMigrator(unittest.TestCase):
         mock_cluster_class.return_value = mock_cluster
         mock_bucket = MagicMock()
         mock_cluster.bucket.return_value = mock_bucket
-        mock_bucket.default_collection.return_value = MagicMock()
 
+        # Mock collection manager and its methods
+        mock_collection_manager = MagicMock()
+        mock_bucket.collections.return_value = mock_collection_manager
+
+        # Simulate that scope and collection do not exist initially
+        # Use a function for side_effect to simulate multiple calls
+        mock_scope = MagicMock()
+        mock_scope.name = 'test_scope'
+        mock_scope.collections = []
+        mock_collection = MagicMock()
+        mock_collection.name = 'test_collection'
+
+        def get_all_scopes_side_effect():
+            if not hasattr(self, 'get_all_scopes_call_count'):
+                self.get_all_scopes_call_count = 0
+            self.get_all_scopes_call_count += 1
+
+            if self.get_all_scopes_call_count == 1:
+                # Before scope creation
+                return []
+            elif self.get_all_scopes_call_count == 2:
+                # After scope creation
+                return [mock_scope]
+            elif self.get_all_scopes_call_count == 3:
+                # Before collection creation
+                return [mock_scope]
+            else:
+                # After collection creation
+                mock_scope.collections = [mock_collection]
+                return [mock_scope]
+
+        mock_collection_manager.get_all_scopes.side_effect = get_all_scopes_side_effect
+
+        # Call the connect method
         self.migrator.connect(
             cb_url='couchbase://localhost',
             cb_username='user',
             cb_password='pass',
             couchbase_bucket='bucket',
-            cb_scope=None,
-            cb_collection=None,
+            cb_scope='test_scope',
+            cb_collection='test_collection',
         )
 
+        # Assertions
         mock_cluster_class.assert_called_once()
         mock_cluster.wait_until_ready.assert_called_once()
         mock_cluster.bucket.assert_called_once_with('bucket')
+        mock_bucket.collections.assert_called_once()
+        mock_collection_manager.create_scope.assert_called_once_with('test_scope')
+
+        # Since the collection did not exist, create_collection should be called
+        mock_collection_manager.create_collection.assert_called_once()
+        collection_spec = mock_collection_manager.create_collection.call_args[0][0]
+        self.assertEqual(collection_spec.scope_name, 'test_scope')
+        self.assertEqual(collection_spec.name, 'test_collection')
+
+    @patch('hf_to_cb_dataset_migrator.migration.Cluster')
+    def test_connect_create_scope_and_collection_exceptions(self, mock_cluster_class):
+        # Mock cluster connection
+        mock_cluster = MagicMock()
+        mock_cluster_class.return_value = mock_cluster
+        mock_bucket = MagicMock()
+        mock_cluster.bucket.return_value = mock_bucket
+
+        # Mock collection manager and its methods
+        mock_collection_manager = MagicMock()
+        mock_bucket.collections.return_value = mock_collection_manager
+
+        # Mock scope and collection
+        mock_scope = MagicMock()
+        mock_scope.name = 'test_scope'
+        mock_scope.collections = []
+        mock_collection = MagicMock()
+        mock_collection.name = 'test_collection'
+
+        def get_all_scopes_side_effect():
+            if not hasattr(self, 'get_all_scopes_call_count'):
+                self.get_all_scopes_call_count = 0
+            self.get_all_scopes_call_count += 1
+
+            if self.get_all_scopes_call_count == 1:
+                # Before scope creation
+                return []
+            elif self.get_all_scopes_call_count == 2:
+                # After scope creation (even though it raises exception)
+                return [mock_scope]
+            elif self.get_all_scopes_call_count == 3:
+                # Before collection creation
+                return [mock_scope]
+            else:
+                # After collection creation (even though it raises exception)
+                mock_scope.collections = [mock_collection]
+                return [mock_scope]
+
+        mock_collection_manager.get_all_scopes.side_effect = get_all_scopes_side_effect
+
+        # Simulate exceptions when creating scope and collection
+        mock_collection_manager.create_scope.side_effect = ScopeAlreadyExistsException()
+        mock_collection_manager.create_collection.side_effect = CollectionAlreadyExistsException()
+
+        # Call the connect method
+        self.migrator.connect(
+            cb_url='couchbase://localhost',
+            cb_username='user',
+            cb_password='pass',
+            couchbase_bucket='bucket',
+            cb_scope='test_scope',
+            cb_collection='test_collection',
+        )
+
+        # Assertions
+        mock_collection_manager.create_scope.assert_called_once_with('test_scope')
+        mock_collection_manager.create_collection.assert_called_once()
+        collection_spec = mock_collection_manager.create_collection.call_args[0][0]
+        self.assertEqual(collection_spec.scope_name, 'test_scope')
+        self.assertEqual(collection_spec.name, 'test_collection')
+
+    @patch('hf_to_cb_dataset_migrator.migration.Cluster')
+    def test_connect_scope_and_collection_exist(self, mock_cluster_class):
+        # Mock cluster connection
+        mock_cluster = MagicMock()
+        mock_cluster_class.return_value = mock_cluster
+        mock_bucket = MagicMock()
+        mock_cluster.bucket.return_value = mock_bucket
+
+        # Mock collection manager and its methods
+        mock_collection_manager = MagicMock()
+        mock_bucket.collections.return_value = mock_collection_manager
+
+        # Simulate that scope and collection already exist
+        mock_collection = MagicMock()
+        mock_collection.name = 'test_collection'
+        mock_scope = MagicMock()
+        mock_scope.name = 'test_scope'
+        mock_scope.collections = [mock_collection]
+        mock_collection_manager.get_all_scopes.return_value = [mock_scope]
+
+        # Call the connect method
+        self.migrator.connect(
+            cb_url='couchbase://localhost',
+            cb_username='user',
+            cb_password='pass',
+            couchbase_bucket='bucket',
+            cb_scope='test_scope',
+            cb_collection='test_collection',
+        )
+
+        # Assertions
+        mock_cluster_class.assert_called_once()
+        mock_cluster.wait_until_ready.assert_called_once()
+        mock_cluster.bucket.assert_called_once_with('bucket')
+        mock_bucket.collections.assert_called_once()
+
+        # Since the scope and collection exist, create_scope and create_collection should not be called
+        mock_collection_manager.create_scope.assert_not_called()
+        mock_collection_manager.create_collection.assert_not_called()
 
     @patch('hf_to_cb_dataset_migrator.migration.Cluster')
     def test_connect_failure(self, mock_cluster_class):
@@ -221,8 +365,8 @@ class TestDatasetMigrator(unittest.TestCase):
                 cb_username='user',
                 cb_password='pass',
                 couchbase_bucket='bucket',
-                cb_scope=None,
-                cb_collection=None,
+                cb_scope='test_scope',
+                cb_collection='test_collection',
             )
 
     def test_close(self):

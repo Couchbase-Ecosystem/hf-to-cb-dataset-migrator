@@ -82,6 +82,34 @@ def list_splits_cmd(path, config_name, data_files, download_config, download_mod
     else:
         click.echo(f"No splits found for dataset '{path}' with config '{config_name}' or dataset not found.")
 
+@main.command('list-fields')
+@click.option('--path', required=True, help='Path or name of the dataset.')
+@click.option('--name', help='Name of the dataset configuration (optional).')
+@click.option('--data-files', multiple=True, help='Paths to source data files (optional).')
+@click.option('--revision', default=None, help='Version of the dataset script to load (optional).')
+@click.option('--token', default=None, help='Hugging Face token for private datasets (optional).')
+@click.option('--json-output', is_flag=True, help='Output the fields in JSON format.')
+def list_fields(path, name, data_files, revision, token, json_output):
+    """List the fields (columns) of a dataset."""
+    migrator = DatasetMigrator(token=token)
+
+    try:
+        fields = migrator.list_fields(
+            path=path,
+            name=name,
+            data_files=list(data_files) if data_files else None,
+            revision=revision
+        )
+        if json_output:
+            click.echo(json.dumps(fields))
+        else:
+            click.echo("Fields:")
+            for field in fields:
+                click.echo(field)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
 @main.command()
 @click.option('--path', required=True, help='Path or name of the dataset.')
 @click.option('--name', default=None, help='Configuration name of the dataset (optional).')

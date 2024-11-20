@@ -205,6 +205,48 @@ class DatasetMigrator:
             logger.error(f"An error occurred while fetching splits: {e}")
             return None
 
+    def list_fields(
+        self,
+        path: str,
+        name: Optional[str] = None,
+        data_files: Optional[Union[str, Sequence[str], Mapping[str, Union[str, Sequence[str]]]]] = None,
+        revision: Optional[Union[str, Version]] = None,
+        token: Optional[str] = None,
+        **load_dataset_kwargs
+    ) -> List[str]:
+        """
+        List the fields (columns) of a dataset.
+
+        :param path: Path or name of the dataset.
+        :param name: Name of the dataset configuration (optional).
+        :param data_files: Paths to source data files (optional).
+        :param revision: Version of the dataset script to load (optional).
+        :param token: Hugging Face token for private datasets (optional).
+        :param load_dataset_kwargs: Additional arguments to pass to load_dataset.
+        :return: List of field names.
+        """
+        try:
+            dataset = load_dataset(
+                path=path,
+                name=name,
+                data_files=data_files,
+                revision=revision,
+                use_auth_token=token,
+                **load_dataset_kwargs
+            )
+            # If the dataset is a DatasetDict (multiple splits), pick one split
+            if isinstance(dataset, DatasetDict):
+                dataset_split = next(iter(dataset.values()))
+            else:
+                dataset_split = dataset
+
+            # Get the features (fields) of the dataset
+            fields = list(dataset_split.column_names)
+            return fields
+        except Exception as e:
+            logger.error(f"Failed to list fields for dataset '{path}': {e}")
+            raise
+    
     def migrate_dataset(
         self,
         path: str,
