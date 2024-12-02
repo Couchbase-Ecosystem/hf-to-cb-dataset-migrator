@@ -20,7 +20,6 @@ from datasets.utils.info_utils import VerificationMode
 from datasets.utils.logging import set_verbosity_error
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 
 class DatasetMigrator:
@@ -39,7 +38,7 @@ class DatasetMigrator:
         cb_url: str,
         cb_username: str,
         cb_password: str,
-        couchbase_bucket: str,
+        cb_bucket: str,
         cb_scope: Optional[str] = None,
         cb_collection: Optional[str] = None,
     ) -> None:
@@ -52,7 +51,7 @@ class DatasetMigrator:
             cluster_opts.apply_profile(KnownConfigProfiles.WanDevelopment)
             self.cluster = Cluster(cb_url, cluster_opts)
             self.cluster.wait_until_ready(timedelta(seconds=60))  # Wait until cluster is ready
-            bucket = self.cluster.bucket(couchbase_bucket)
+            bucket = self.cluster.bucket(cb_bucket)
 
             # Get the collection manager
             collection_manager = bucket.collections()
@@ -253,7 +252,7 @@ class DatasetMigrator:
         cb_url: str,
         cb_username: str,
         cb_password: str,
-        couchbase_bucket: str,
+        cb_bucket: str,
         cb_scope: Optional[str] = None,
         cb_collection: Optional[str] = None,
         id_fields: Optional[str] = None,
@@ -283,7 +282,7 @@ class DatasetMigrator:
         :param cb_url: Couchbase cluster URL (e.g., couchbase://localhost).
         :param cb_username: Username for Couchbase authentication.
         :param cb_password: Password for Couchbase authentication.
-        :param couchbase_bucket: Couchbase bucket to store data.
+        :param cb_bucket: Couchbase bucket to store data.
         :param cb_scope: Couchbase scope name.
         :param cb_collection: Couchbase collection name.
         :param id_fields: Comma-separated list of field names to use as document ID.
@@ -349,7 +348,7 @@ class DatasetMigrator:
             dataset = load_dataset(**load_kwargs)
 
             # Establish Couchbase connection
-            self.connect(cb_url, cb_username, cb_password, couchbase_bucket, cb_scope, cb_collection)
+            self.connect(cb_url, cb_username, cb_password, cb_bucket, cb_scope, cb_collection)
 
             total_records = 0
 

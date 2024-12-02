@@ -3,15 +3,38 @@
 import click
 import json
 import os
+import sys
 from hf_to_cb_dataset_migrator.migration import DatasetMigrator
+from hf_to_cb_dataset_migrator.utils import generate_help
 from typing import Any
+import logging
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+
+prog_name = "cbmigrate hugging-face" if os.getenv('RUN_FROM_CBMIGRATE', "false") == "true" else "hf_to_cb_dataset_migrator"
+
+def pre_function(ctx):
+    # Access all options passed to the command
+    options = ctx.params
+    click.echo(json.dumps(options, indent=2))
+
 
 @click.group(context_settings=dict(help_option_names=["-h", "--help"]))
 def main():
     """CLI tool to interact with Hugging Face datasets and migrate them to Couchbase."""
     pass
 
-@main.command('list-configs')
+list_configs_help = generate_help("List all configuration names for a given dataset.",[
+    f"{prog_name} list-configs --path dataset.",
+    "List configurations for a public dataset.",
+    f"{prog_name} list-configs --path my-dataset --token YOUR_HF_TOKEN",
+    "List configurations for a private dataset using a token.",
+    f"{prog_name} list-configs --path dataset --json-output",
+    "Output configurations in JSON format."
+])
+@main.command('list-configs',help=list_configs_help)
 @click.option('--path', required=True, help='Path or name of the dataset.')
 @click.option('--revision', default=None, help='Version of the dataset script to load (optional).')
 @click.option('--download-config', default=None, help='Specific download configuration parameters (optional).')
@@ -21,9 +44,19 @@ def main():
 @click.option('--data-files', default=None, multiple=True, help='Path(s) to source data file(s) (optional).')
 @click.option('--token',default=None, help='Use authentication token for private datasets.')
 @click.option('--json-output', is_flag=True, help='Output the configurations in JSON format.')
-def list_configs_cmd(path, revision, download_config, download_mode, dynamic_modules_path,
-                     data_files, token, json_output):
-    """List all configuration names for a given dataset."""
+@click.option('--debug', is_flag=True, help='Enable debug output.')
+@click.pass_context
+def list_configs_cmd(ctx, path, revision, download_config, download_mode, dynamic_modules_path,
+                     data_files, token, json_output, debug):
+    # this is code for mock the cli library for cbmigrate testing
+    if os.getenv('MOCK_CLI_FOR_CBMIGRATE', "false") =="true":
+        pre_function(ctx)
+        return
+    if json_output:
+        logging.basicConfig(level=logging.ERROR)   
+    elif debug:
+        logging.basicConfig(level=logging.DEBUG)
+
     migrator = DatasetMigrator(token=token)
     download_kwargs = {
         'revision': revision,
@@ -46,7 +79,18 @@ def list_configs_cmd(path, revision, download_config, download_mode, dynamic_mod
     else:
         click.echo(f"No configurations found for dataset '{path}' or dataset not found.")
 
-@main.command('list-splits')
+
+list_splits_help = generate_help("List all available splits for a given dataset and configuration.", [
+    f"{prog_name} list-splits --path dataset",
+    "List splits for a public dataset",
+    f"{prog_name} list-splits --path dataset --name config-name",
+    "List splits for a dataset with a configuration name",
+    f"{prog_name} list-splits --path my-private-dataset --token YOUR_HF_TOKEN",
+    "List splits for a private dataset using a token",
+    f"{prog_name} list-splits --path dataset --json-output",
+    "Output splits in JSON format",
+])
+@main.command('list-splits', help=list_splits_help)
 @click.option('--path', required=True, help='Path or name of the dataset.')
 @click.option('--name', 'config_name', default=None, help='Configuration name of the dataset (optional).')
 @click.option('--data-files', default=None, multiple=True, help='Path(s) to source data file(s) (optional).')
@@ -56,9 +100,21 @@ def list_configs_cmd(path, revision, download_config, download_mode, dynamic_mod
 @click.option('--revision', default=None, help='Version of the dataset script to load (optional).')
 @click.option('--token', default=None, help='Authentication token for private datasets (optional).')
 @click.option('--json-output', is_flag=True, help='Output the splits in JSON format.')
-def list_splits_cmd(path, config_name, data_files, download_config, download_mode, revision, token,
-                    json_output):
-    """List all available splits for a given dataset and configuration."""
+@click.option('--debug', is_flag=True, help='Enable debug output.')
+@click.pass_context
+def list_splits_cmd(ctx, path, config_name, data_files, download_config, download_mode, revision, token,
+                    json_output, debug):
+    
+    # this is code for mock the cli library for cbmigrate testing
+    if os.getenv('MOCK_CLI_FOR_CBMIGRATE', "false") =="true":
+        pre_function(ctx)
+        return
+    
+    if json_output:
+        logging.basicConfig(level=logging.ERROR)   
+    elif debug:
+        logging.basicConfig(level=logging.DEBUG)
+        
     migrator = DatasetMigrator(token=token)
 
     config_kwargs = {
@@ -82,15 +138,37 @@ def list_splits_cmd(path, config_name, data_files, download_config, download_mod
     else:
         click.echo(f"No splits found for dataset '{path}' with config '{config_name}' or dataset not found.")
 
-@main.command('list-fields')
+list_fields_help = generate_help("List the fields (columns) of a dataset.", [
+    f"{prog_name} list-fields --path dataset",
+    "List fields for a public dataset",
+    f"{prog_name} list-fields --path dataset --name config-name",
+    "List fields for a dataset with a configuration name",
+    f"{prog_name} list-fields --path my-private-dataset --token YOUR_HF_TOKEN",
+    "List fields for a private dataset using a token",
+    f"{prog_name} list-fields --path dataset --json-output",
+    "Output fields in JSON format",
+])
+@main.command('list-fields', help=list_fields_help)
 @click.option('--path', required=True, help='Path or name of the dataset.')
 @click.option('--name', help='Name of the dataset configuration (optional).')
 @click.option('--data-files', multiple=True, help='Paths to source data files (optional).')
 @click.option('--revision', default=None, help='Version of the dataset script to load (optional).')
 @click.option('--token', default=None, help='Hugging Face token for private datasets (optional).')
 @click.option('--json-output', is_flag=True, help='Output the fields in JSON format.')
-def list_fields(path, name, data_files, revision, token, json_output):
-    """List the fields (columns) of a dataset."""
+@click.option('--debug', is_flag=True, help='Enable debug output.')
+@click.pass_context
+def list_fields(ctx, path, name, data_files, revision, token, json_output, debug):
+    
+    # this is code for mock the cli library for cbmigrate testing
+    if os.getenv('MOCK_CLI_FOR_CBMIGRATE', "false") =="true":
+        pre_function(ctx)
+        return
+    
+    if json_output:
+        logging.basicConfig(level=logging.ERROR)   
+    elif debug:
+        logging.basicConfig(level=logging.DEBUG)
+
     migrator = DatasetMigrator(token=token)
 
     try:
@@ -110,7 +188,53 @@ def list_fields(path, name, data_files, revision, token, json_output):
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-@main.command()
+cb_opts = "--cb-url couchbase://localhost --cb-username user --cb-password pass "  \
+"--cb-bucket my_bucket --cb-scope my_scope --cb-collection my_collection"
+migrate_help = generate_help("Migrate datasets from Hugging Face to Couchbase.", [
+    f"{prog_name} migrate --path dataset --id-fields id_field {cb_opts}",
+    "Migrate the default split of a public dataset with minimal options",
+    
+    f"{prog_name} migrate --path dataset --name config-name --id-fields id_field {cb_opts}",
+    "Migrate a dataset with a specific configuration name",
+    
+    f"{prog_name} migrate --path dataset --data-files file1.csv --data-files file2.csv --id-fields id_field {cb_opts}",
+   "Migrate a dataset by specifying data files",
+    
+    f"{prog_name} migrate --path dataset --split train --id-fields id_field {cb_opts}",
+    "Migrate a specific split of the dataset",
+    
+    f"{prog_name} migrate --path dataset --cache-dir /path/to/cache --id-fields id_field {cb_opts}",
+    "Migrate a dataset using a custom cache directory",
+    
+    f"{prog_name} migrate --path dataset --download-mode force_redownload --id-fields id_field {cb_opts}",
+    "Migrate a dataset with specific download configuration",
+    
+    f"{prog_name} migrate --path dataset --verification-mode all_checks --id-fields id_field {cb_opts}",
+    "# Migrate a dataset with all verification checks",
+    
+    f"{prog_name} migrate --path dataset --keep-in-memory --id-fields id_field {cb_opts}",
+    "Migrate a dataset and keep it in memory",
+    
+    f"{prog_name} migrate --path dataset --save-infos --id-fields id_field {cb_opts}",
+    "Migrate a dataset and save dataset information",
+    
+    f"{prog_name} migrate --path dataset --no-streaming --id-fields id_field {cb_opts}",
+    "# Migrate a dataset with streaming mode disabled",
+    
+    f"{prog_name} migrate --path dataset --trust-remote-code --id-fields id_field {cb_opts}",
+    "Migrate a dataset allowing execution of remote code",
+    
+    f"{prog_name} migrate --path dataset --id-fields field1,field2 {cb_opts}",
+    "Migrate a dataset using multiple fields as document ID",
+    
+    f"{prog_name} migrate --path my-private-dataset --id-fields id_field --token YOUR_HF_TOKEN {cb_opts}",
+    "Migrate a private dataset using a Hugging Face token",
+    f"{prog_name} migrate --path dataset --revision 1.0.0 --id-fields id_field {cb_opts}",
+    "Migrate a specific revision of a dataset",
+    f"{prog_name} migrate --path dataset --num-proc 4 --id-fields id_field {cb_opts}",
+    "Migrate a dataset using multiple processes",
+])
+@main.command(help=migrate_help)
 @click.option('--path', required=True, help='Path or name of the dataset.')
 @click.option('--name', default=None, help='Configuration name of the dataset (optional).')
 #@click.option('--data-dir', default=None, help='Directory with the data files (optional).')
@@ -140,16 +264,25 @@ def list_fields(path, name, data_files, revision, token, json_output):
 @click.option('--cb-bucket', prompt='Couchbase bucket name', help='Couchbase bucket to store data.')
 @click.option('--cb-scope', default=None, help='Couchbase scope name (optional).')
 @click.option('--cb-collection', default=None, help='Couchbase collection name (optional).')
+@click.option('--debug', is_flag=True, help='Enable debug output.')
+@click.pass_context
 def migrate(
-    path, name, 
+    ctx, path, name, 
     #data_dir, 
     data_files, split, cache_dir, 
     #features, 
     download_config, download_mode,
     verification_mode, keep_in_memory, save_infos, revision, token, streaming, num_proc, storage_options,
-    trust_remote_code, id_fields, cb_url, cb_username, cb_password, cb_bucket, cb_scope, cb_collection
-):
-    """Migrate datasets from Hugging Face to Couchbase."""
+    trust_remote_code, id_fields, cb_url, cb_username, cb_password, cb_bucket, cb_scope, cb_collection,
+    debug):
+
+    # this is code for mock the cli library for cbmigrate testing
+    if os.getenv('MOCK_CLI_FOR_CBMIGRATE', "false") =="true":
+        pre_function(ctx)
+        return
+
+    if debug:
+        logging.basicConfig(level=logging.DEBUG)
     click.echo(f"Starting migration of dataset '{path}' to Couchbase bucket '{cb_bucket}'...")
     migrator = DatasetMigrator(token=token)
 
@@ -161,7 +294,7 @@ def migrate(
         cb_url=cb_url,
         cb_username=cb_username,
         cb_password=cb_password,
-        couchbase_bucket=cb_bucket,
+        cb_bucket=cb_bucket,
         cb_scope=cb_scope,
         cb_collection=cb_collection,
         id_fields=id_fields,
@@ -189,5 +322,4 @@ def migrate(
         click.echo("Migration failed.")
 
 if __name__ == '__main__':
-    prog_name = "cbmigrate hugging-face" if os.getenv('RUN_FROM_CBMIGRATE', "false") == "true" else None
     main(prog_name=prog_name)

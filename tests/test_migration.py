@@ -73,7 +73,7 @@ class TestDatasetMigrator(unittest.TestCase):
             cb_url='couchbase://localhost',
             cb_username='user',
             cb_password='pass',
-            couchbase_bucket='bucket',
+            cb_bucket='bucket',
             cb_scope='test_scope',
             cb_collection='test_collection',
             id_fields='id',
@@ -124,7 +124,7 @@ class TestDatasetMigrator(unittest.TestCase):
                 cb_url='couchbase://localhost',
                 cb_username='user',
                 cb_password='pass',
-                couchbase_bucket='bucket',
+                cb_bucket='bucket',
                 cb_scope='test_scope',
                 cb_collection='test_collection',
                 id_fields='id',
@@ -235,7 +235,7 @@ class TestDatasetMigrator(unittest.TestCase):
             cb_url='couchbase://localhost',
             cb_username='user',
             cb_password='pass',
-            couchbase_bucket='bucket',
+            cb_bucket='bucket',
             cb_scope='test_scope',
             cb_collection='test_collection',
         )
@@ -302,7 +302,7 @@ class TestDatasetMigrator(unittest.TestCase):
             cb_url='couchbase://localhost',
             cb_username='user',
             cb_password='pass',
-            couchbase_bucket='bucket',
+            cb_bucket='bucket',
             cb_scope='test_scope',
             cb_collection='test_collection',
         )
@@ -339,7 +339,7 @@ class TestDatasetMigrator(unittest.TestCase):
             cb_url='couchbase://localhost',
             cb_username='user',
             cb_password='pass',
-            couchbase_bucket='bucket',
+            cb_bucket='bucket',
             cb_scope='test_scope',
             cb_collection='test_collection',
         )
@@ -364,7 +364,7 @@ class TestDatasetMigrator(unittest.TestCase):
                 cb_url='couchbase://localhost',
                 cb_username='user',
                 cb_password='pass',
-                couchbase_bucket='bucket',
+                cb_bucket='bucket',
                 cb_scope='test_scope',
                 cb_collection='test_collection',
             )
