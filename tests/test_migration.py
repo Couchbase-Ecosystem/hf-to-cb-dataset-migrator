@@ -1,7 +1,7 @@
 # test_migration.py
 
 import unittest
-from unittest.mock import patch, MagicMock, Mock
+from unittest.mock import patch, MagicMock, Mock, call
 from hf_to_cb_dataset_migrator.migration import DatasetMigrator
 from couchbase.exceptions import (
     CouchbaseException,
@@ -9,7 +9,7 @@ from couchbase.exceptions import (
     ScopeAlreadyExistsException,
     CollectionAlreadyExistsException,
 )
-from datasets import Dataset
+from datasets import Dataset, DatasetDict
 from typing import Any
 
 
@@ -128,26 +128,11 @@ class TestDatasetMigrator(unittest.TestCase):
                 cb_scope='test_scope',
                 cb_collection='test_collection',
                 id_fields='id',
-                name=None,
-                data_files=None,
-                split=None,
-                cache_dir=None,
-                features=None,
-                download_config=None,
-                download_mode=None,
-                verification_mode=None,
-                keep_in_memory=None,
-                save_infos=False,
-                revision='1.0.0',
-                streaming=False,
-                num_proc=None,
-                storage_options=None,
-                trust_remote_code=None,
-                batch_size=1,
+                batch_size=1
             )
 
             self.assertFalse(result)
-            self.assertIn("An error occurred during migration", cm.output[0])
+            self.assertIn("Error processing split", cm.output[0])
 
     def test_insert_multi_success(self):
         # Mock insert_multi to simulate successful insertion
@@ -382,6 +367,149 @@ class TestDatasetMigrator(unittest.TestCase):
         self.migrator.close()  # Should not raise any exception
         self.assertIsNone(self.migrator.cluster)
         self.assertIsNone(self.migrator.collection)
+
+    def test_list_fields(self):
+        # Mock dataset with known fields
+        mock_dataset = Dataset.from_dict({
+            'id': [1, 2],
+            'text': ['Hello', 'World'],
+            'label': [0, 1]
+        })
+
+        with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load_dataset:
+            mock_load_dataset.return_value = mock_dataset
+            
+            fields = self.migrator.list_fields(
+                path='test_dataset',
+                revision='1.0.0'
+            )
+            
+            self.assertEqual(fields, ['id', 'text', 'label'])
+            mock_load_dataset.assert_called_once()
+
+    def test_migrate_dataset_with_id_fields(self):
+        # Mock dataset with multiple fields
+        mock_dataset = MagicMock(spec=Dataset)
+        mock_dataset.column_names = ['user_id', 'post_id']
+        mock_dataset.__iter__.return_value = [
+            {'user_id': 'u1', 'post_id': 'p1', 'text': 'Hello'},
+            {'user_id': 'u2', 'post_id': 'p2', 'text': 'World'}
+        ]
+
+        with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load_dataset, \
+             patch.object(DatasetMigrator, 'connect') as mock_connect, \
+             patch.object(DatasetMigrator, 'close') as mock_close, \
+             patch.object(DatasetMigrator, 'insert_multi') as mock_insert_multi:
+            
+            mock_load_dataset.return_value = mock_dataset
+            
+            result = self.migrator.migrate_dataset(
+                path='test_dataset',
+                cb_url='couchbase://localhost',
+                cb_username='user',
+                cb_password='pass',
+                cb_bucket='bucket',
+                cb_scope='test_scope',
+                cb_collection='test_collection',
+                id_fields='user_id,post_id',
+                batch_size=1
+            )
+
+            self.assertTrue(result)
+            expected_calls = [
+                call({'u1_p1': {'user_id': 'u1', 'post_id': 'p1', 'text': 'Hello'}}),
+                call({'u2_p2': {'user_id': 'u2', 'post_id': 'p2', 'text': 'World'}})
+            ]
+            mock_insert_multi.assert_has_calls(expected_calls)
+
+    def test_migrate_dataset_with_splits(self):
+        # Mock datasets with splits
+        train_dataset = MagicMock(spec=Dataset)
+        train_dataset.column_names = ['id']
+        train_dataset.__iter__.return_value = [
+            {'id': 1, 'text': 'Train'}
+        ]
+        
+        test_dataset = MagicMock(spec=Dataset)
+        test_dataset.__iter__.return_value = [
+            {'id': 2, 'text': 'Test'}
+        ]
+        
+        mock_dataset_dict = DatasetDict({
+            'train': train_dataset,
+            'test': test_dataset
+        })
+
+        with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load_dataset, \
+             patch.object(DatasetMigrator, 'connect') as mock_connect, \
+             patch.object(DatasetMigrator, 'close') as mock_close, \
+             patch.object(DatasetMigrator, 'insert_multi') as mock_insert_multi:
+            
+            mock_load_dataset.return_value = mock_dataset_dict
+            
+            result = self.migrator.migrate_dataset(
+                path='test_dataset',
+                cb_url='couchbase://localhost',
+                cb_username='user',
+                cb_password='pass',
+                cb_bucket='bucket',
+                cb_scope='test_scope',
+                cb_collection='test_collection',
+                id_fields='id',
+                batch_size=1
+            )
+
+            self.assertTrue(result)
+            expected_calls = [
+                call({'1': {'id': 1, 'text': 'Train', 'split': 'train'}}),
+                call({'2': {'id': 2, 'text': 'Test', 'split': 'test'}})
+            ]
+            mock_insert_multi.assert_has_calls(expected_calls)
+
+    def test_migrate_dataset_batch_processing(self):
+        # Mock dataset with multiple records
+        mock_dataset = MagicMock(spec=Dataset)
+        mock_dataset.column_names = ['id', 'text']  # Add column_names attribute
+        
+        # Create a list of records that will be returned during iteration
+        records = [{'id': i, 'text': f'Text{i}'} for i in range(1, 6)]
+        mock_dataset.__iter__.return_value = iter(records)  # Use iter() to make it a proper iterator
+
+        with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load_dataset, \
+             patch.object(DatasetMigrator, 'connect') as mock_connect, \
+             patch.object(DatasetMigrator, 'close') as mock_close, \
+             patch.object(DatasetMigrator, 'insert_multi') as mock_insert_multi:
+            
+            mock_load_dataset.return_value = mock_dataset
+            mock_insert_multi.return_value = None  # Ensure insert_multi doesn't raise any exceptions
+            
+            result = self.migrator.migrate_dataset(
+                path='test_dataset',
+                cb_url='couchbase://localhost',
+                cb_username='user',
+                cb_password='pass',
+                cb_bucket='bucket',
+                cb_scope='test_scope',
+                cb_collection='test_collection',
+                id_fields='id',
+                batch_size=2
+            )
+
+            self.assertTrue(result)
+            expected_calls = [
+                call({
+                    '1': {'id': 1, 'text': 'Text1'},
+                    '2': {'id': 2, 'text': 'Text2'}
+                }),
+                call({
+                    '3': {'id': 3, 'text': 'Text3'},
+                    '4': {'id': 4, 'text': 'Text4'}
+                }),
+                call({
+                    '5': {'id': 5, 'text': 'Text5'}
+                })
+            ]
+            mock_insert_multi.assert_has_calls(expected_calls)
 
 
 if __name__ == '__main__':

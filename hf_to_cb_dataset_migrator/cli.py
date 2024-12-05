@@ -6,17 +6,20 @@ import os
 import sys
 from hf_to_cb_dataset_migrator.migration import DatasetMigrator
 from hf_to_cb_dataset_migrator.utils import generate_help
-from typing import Any
+from typing import Any, Optional
 import logging
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+DEFAULT_TIMEOUT = 60
+DEFAULT_BATCH_SIZE = 1000
+MOCK_CLI_ENV_VAR = 'MOCK_CLI_FOR_CBMIGRATE'
+RUN_FROM_CBMIGRATE_ENV_VAR = 'RUN_FROM_CBMIGRATE'
 
-prog_name = "cbmigrate hugging-face" if os.getenv('RUN_FROM_CBMIGRATE', "false") == "true" else "hf_to_cb_dataset_migrator"
+prog_name = "cbmigrate hugging-face" if os.getenv(RUN_FROM_CBMIGRATE_ENV_VAR, "false") == "true" else "hf_to_cb_dataset_migrator"
 
-def pre_function(ctx):
-    # Access all options passed to the command
+def pre_function(ctx: click.Context) -> None:
     options = ctx.params
     click.echo(json.dumps(options, indent=2))
 
@@ -49,7 +52,7 @@ list_configs_help = generate_help("List all configuration names for a given data
 def list_configs_cmd(ctx, path, revision, download_config, download_mode, dynamic_modules_path,
                      data_files, token, json_output, debug):
     # this is code for mock the cli library for cbmigrate testing
-    if os.getenv('MOCK_CLI_FOR_CBMIGRATE', "false") =="true":
+    if os.getenv(MOCK_CLI_ENV_VAR, "false") == "true":
         pre_function(ctx)
         return
     if json_output:
@@ -58,9 +61,18 @@ def list_configs_cmd(ctx, path, revision, download_config, download_mode, dynami
         logging.basicConfig(level=logging.DEBUG)
 
     migrator = DatasetMigrator(token=token)
+    if download_config:
+        try:
+            download_config_dict = json.loads(download_config)
+        except json.JSONDecodeError as e:
+            click.echo(f"Error parsing download_config JSON: {e}", err=True)
+            sys.exit(1)
+    else:
+        download_config_dict = None
+
     download_kwargs = {
         'revision': revision,
-        'download_config': json.load(download_config) if download_config else None,
+        'download_config': download_config_dict,
         'download_mode': download_mode,
         'dynamic_modules_path': dynamic_modules_path,
         'data_files': data_files if data_files else None,
@@ -68,16 +80,20 @@ def list_configs_cmd(ctx, path, revision, download_config, download_mode, dynami
     # Remove None values
     download_kwargs = {k: v for k, v in download_kwargs.items() if v is not None}
 
-    configs = migrator.list_configs(path, **download_kwargs)
-    if configs:
-        if json_output:
-            click.echo(json.dumps(configs, indent=2))
+    try:
+        configs = migrator.list_configs(path, **download_kwargs)
+        if configs:
+            if json_output:
+                click.echo(json.dumps(configs, indent=2))
+            else:
+                click.echo(f"Available configurations for '{path}':")
+                for config in configs:
+                    click.echo(f"- {config}")
         else:
-            click.echo(f"Available configurations for '{path}':")
-            for config in configs:
-                click.echo(f"- {config}")
-    else:
-        click.echo(f"No configurations found for dataset '{path}' or dataset not found.")
+            click.echo(f"No configurations found for dataset '{path}' or dataset not found.")            
+    except Exception as e:
+        click.echo(f"Error listing configurations: {str(e)}", err=True)
+        sys.exit(1)
 
 
 list_splits_help = generate_help("List all available splits for a given dataset and configuration.", [
@@ -106,7 +122,7 @@ def list_splits_cmd(ctx, path, config_name, data_files, download_config, downloa
                     json_output, debug):
     
     # this is code for mock the cli library for cbmigrate testing
-    if os.getenv('MOCK_CLI_FOR_CBMIGRATE', "false") =="true":
+    if os.getenv(MOCK_CLI_ENV_VAR, "false") == "true":
         pre_function(ctx)
         return
     
@@ -126,17 +142,21 @@ def list_splits_cmd(ctx, path, config_name, data_files, download_config, downloa
     # Remove None values
     config_kwargs = {k: v for k, v in config_kwargs.items() if v is not None}
 
-    splits = migrator.list_splits(path, config_name=config_name, **config_kwargs)
-    if splits:
-        if json_output:
-            click.echo(json.dumps(splits, indent=2))
+    try:
+        splits = migrator.list_splits(path, config_name=config_name, **config_kwargs)
+        if splits:
+            if json_output:
+                click.echo(json.dumps(splits, indent=2))
+            else:
+                config_name_display = config_name if config_name else "default"
+                click.echo(f"Available splits for dataset '{path}' with config '{config_name_display}':")
+                for split in splits:
+                    click.echo(f"- {split}")
         else:
-            config_name_display = config_name if config_name else "default"
-            click.echo(f"Available splits for dataset '{path}' with config '{config_name_display}':")
-            for split in splits:
-                click.echo(f"- {split}")
-    else:
-        click.echo(f"No splits found for dataset '{path}' with config '{config_name}' or dataset not found.")
+            click.echo(f"No splits found for dataset '{path}' with config '{config_name}' or dataset not found.")
+    except Exception as e:
+        click.echo(f"Error listing splits: {str(e)}", err=True)
+        sys.exit(1)
 
 list_fields_help = generate_help("List the fields (columns) of a dataset.", [
     f"{prog_name} list-fields --path dataset",
@@ -160,7 +180,7 @@ list_fields_help = generate_help("List the fields (columns) of a dataset.", [
 def list_fields(ctx, path, name, data_files, revision, token, json_output, debug):
     
     # this is code for mock the cli library for cbmigrate testing
-    if os.getenv('MOCK_CLI_FOR_CBMIGRATE', "false") =="true":
+    if os.getenv(MOCK_CLI_ENV_VAR, "false") == "true":
         pre_function(ctx)
         return
     
@@ -251,7 +271,7 @@ migrate_help = generate_help("Migrate datasets from Hugging Face to Couchbase.",
 @click.option('--save-infos', is_flag=True, default=False, help='Save dataset information (default: False).')
 @click.option('--revision', default=None, help='Version of the dataset script to load (optional).')
 @click.option('--token', default=None, help='Authentication token for private datasets (optional).')
-@click.option('--streaming/--no-streaming', default=True, help='Load the dataset in streaming mode (default: True).')
+@click.option('--no-streaming', is_flag=True, default=False, help='Disable streaming mode for dataset loading (default: False).')
 @click.option('--num-proc', default=None, type=int, help='Number of processes to use (optional).')
 @click.option('--storage-options', default=None, help='Storage options for remote filesystems (optional).')
 @click.option('--trust-remote-code', is_flag=True, default=None,
@@ -262,8 +282,9 @@ migrate_help = generate_help("Migrate datasets from Hugging Face to Couchbase.",
 @click.option('--cb-password', prompt=True, hide_input=True, confirmation_prompt=False,
               help='Password for Couchbase authentication.')
 @click.option('--cb-bucket', prompt='Couchbase bucket name', help='Couchbase bucket to store data.')
-@click.option('--cb-scope', default=None, help='Couchbase scope name (optional).')
+@click.option('--cb-scope', required=True, help='Couchbase scope name.')
 @click.option('--cb-collection', default=None, help='Couchbase collection name (optional).')
+@click.option('--cb-batch-size', default=DEFAULT_BATCH_SIZE, type=int, help=f'Number of documents to insert per batch (default: {DEFAULT_BATCH_SIZE}).')
 @click.option('--debug', is_flag=True, help='Enable debug output.')
 @click.pass_context
 def migrate(
@@ -272,12 +293,12 @@ def migrate(
     data_files, split, cache_dir, 
     #features, 
     download_config, download_mode,
-    verification_mode, keep_in_memory, save_infos, revision, token, streaming, num_proc, storage_options,
+    verification_mode, keep_in_memory, save_infos, revision, token, no_streaming, num_proc, storage_options,
     trust_remote_code, id_fields, cb_url, cb_username, cb_password, cb_bucket, cb_scope, cb_collection,
-    debug):
+    debug, cb_batch_size):
 
     # this is code for mock the cli library for cbmigrate testing
-    if os.getenv('MOCK_CLI_FOR_CBMIGRATE', "false") =="true":
+    if os.getenv(MOCK_CLI_ENV_VAR, "false") == "true":
         pre_function(ctx)
         return
 
@@ -288,38 +309,40 @@ def migrate(
 
     # Prepare data_files
     data_files = list(data_files) if data_files else None
-
-    result = migrator.migrate_dataset(
-        path=path,
-        cb_url=cb_url,
-        cb_username=cb_username,
-        cb_password=cb_password,
-        cb_bucket=cb_bucket,
-        cb_scope=cb_scope,
-        cb_collection=cb_collection,
-        id_fields=id_fields,
-        name=name,
-        #data_dir=data_dir,
-        data_files=data_files,
-        split=split,
-        cache_dir=cache_dir,
-        #features=features,
-        download_config=download_config,
-        download_mode=download_mode,
-        verification_mode=verification_mode,
-        keep_in_memory=keep_in_memory,
-        save_infos=save_infos,
-        revision=revision,
-        token=token,
-        streaming=streaming,
-        num_proc=num_proc,
-        storage_options=json.loads(storage_options) if storage_options else None,
-        trust_remote_code=trust_remote_code,
-    )
-    if result:
+    try:
+        migrator.migrate_dataset(
+            path=path,
+            cb_url=cb_url,
+            cb_username=cb_username,
+            cb_password=cb_password,
+            cb_bucket=cb_bucket,
+            cb_scope=cb_scope,
+            cb_collection=cb_collection,
+            id_fields=id_fields,
+            name=name,
+            #data_dir=data_dir,
+            data_files=data_files,
+            split=split,
+            cache_dir=cache_dir,
+            #features=features,
+            download_config=download_config,
+            download_mode=download_mode,
+            verification_mode=verification_mode,
+            keep_in_memory=keep_in_memory,
+            save_infos=save_infos,
+            revision=revision,
+            token=token,
+            streaming=not no_streaming,
+            num_proc=num_proc,
+            storage_options=json.loads(storage_options) if storage_options else None,
+            trust_remote_code=trust_remote_code,
+            batch_size=cb_batch_size,
+        )
         click.echo("Migration completed successfully.")
-    else:
-        click.echo("Migration failed.")
+    except Exception as e:
+        click.echo(f"Migration failed: {str(e)}", err=True)
+        sys.exit(1)
+    
 
 if __name__ == '__main__':
     main(prog_name=prog_name)

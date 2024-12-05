@@ -2,7 +2,7 @@ import logging
 import uuid
 import time
 from datetime import timedelta
-from typing import Any, Dict, List, Union, Optional, Sequence, Mapping
+from typing import Any, Dict, List, Union, Optional, Sequence, Mapping, Callable
 
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
@@ -18,6 +18,8 @@ from datasets.features import Features
 from datasets.utils import Version
 from datasets.utils.info_utils import VerificationMode
 from datasets.utils.logging import set_verbosity_error
+from datasets.arrow_dataset import Dataset
+from datasets.iterable_dataset import IterableDataset
 
 logger = logging.getLogger(__name__)
 
@@ -110,8 +112,7 @@ class DatasetMigrator:
             else:
                 self.collection = bucket.default_collection()
         except CouchbaseException as e:
-            logger.error(f"Failed to connect to Couchbase cluster: {e}")
-            raise
+            raise Exception(f"Failed to connect to Couchbase cluster: {e}")
 
     def close(self) -> None:
         """Closes the connection to the Couchbase cluster."""
@@ -159,8 +160,7 @@ class DatasetMigrator:
             )
             return configs
         except Exception as e:
-            logger.error(f"An error occurred while fetching configs: {e}")
-            return None
+            raise Exception(f"Error listing configurations: {e}")
 
     def list_splits(
         self,
@@ -201,8 +201,7 @@ class DatasetMigrator:
             )
             return splits
         except Exception as e:
-            logger.error(f"An error occurred while fetching splits: {e}")
-            return None
+            raise Exception(f"Error listing splits: {e}")
 
     def list_fields(
         self,
@@ -243,8 +242,7 @@ class DatasetMigrator:
             fields = list(dataset_split.column_names)
             return fields
         except Exception as e:
-            logger.error(f"Failed to list fields for dataset '{path}': {e}")
-            raise
+            raise Exception(f"Error listing fields: {e}")
     
     def migrate_dataset(
         self,
@@ -278,42 +276,48 @@ class DatasetMigrator:
         """
         Migrates a Hugging Face dataset to Couchbase using batch insertion.
 
-        :param path: Path or name of the dataset.
-        :param cb_url: Couchbase cluster URL (e.g., couchbase://localhost).
-        :param cb_username: Username for Couchbase authentication.
-        :param cb_password: Password for Couchbase authentication.
-        :param cb_bucket: Couchbase bucket to store data.
-        :param cb_scope: Couchbase scope name.
-        :param cb_collection: Couchbase collection name.
-        :param id_fields: Comma-separated list of field names to use as document ID.
-        :param name: Configuration name of the dataset.
-        :param data_dir: Directory with the data files.
-        :param data_files: Path(s) to source data file(s).
-        :param split: Which split(s) of the data to load.
-        :param cache_dir: Cache directory to store the datasets.
-        :param features: Set of features to use.
-        :param download_config: Specific download configuration parameters.
-        :param download_mode: Specifies the download mode.
-        :param verification_mode: Verification mode.
-        :param keep_in_memory: Whether to keep the dataset in memory.
-        :param save_infos: Whether to save dataset information.
-        :param revision: Version of the dataset script to load.
-        :param streaming: Whether to load the dataset in streaming mode.
-        :param num_proc: Number of processes to use.
-        :param storage_options: Storage options for remote filesystems.
-        :param trust_remote_code: Allow loading arbitrary code from the dataset repository.
-        :param batch_size: Number of documents to insert per batch.
-        :param config_kwargs: Additional keyword arguments for dataset configuration.
-        :return: True if migration is successful, False otherwise.
+        Args:
+            path: Path or name of the dataset
+            cb_url: Couchbase cluster URL (e.g., couchbase://localhost)
+            cb_username: Username for Couchbase authentication
+            cb_password: Password for Couchbase authentication
+            cb_bucket: Couchbase bucket to store data
+            cb_scope: Couchbase scope name
+            cb_collection: Couchbase collection name
+            id_fields: Comma-separated list of field names to use as document ID
+            name: Configuration name of the dataset
+            data_dir: Directory with the data files
+            data_files: Path(s) to source data file(s)
+            split: Which split(s) of the data to load
+            cache_dir: Cache directory to store the datasets
+            features: Set of features to use
+            download_config: Specific download configuration parameters
+            download_mode: Specifies the download mode
+            verification_mode: Verification mode
+            keep_in_memory: Whether to keep the dataset in memory
+            save_infos: Whether to save dataset information
+            revision: Version of the dataset script to load
+            streaming: Whether to load the dataset in streaming mode
+            num_proc: Number of processes to use
+            storage_options: Storage options for remote filesystems
+            trust_remote_code: Allow loading arbitrary code from the dataset repository
+            batch_size: Number of documents to insert per batch
+            **config_kwargs: Additional keyword arguments for dataset configuration
+
+        Returns:
+            bool: True if migration is successful, False otherwise
+
+        Raises:
+            ValueError: If id_fields are specified but not found in the dataset
+            Exception: For other errors during migration
         """
         try:
             # Include token if provided
             if self.token:
                 config_kwargs['token'] = self.token
 
-            # Prepare parameters for load_dataset
+            # Build load_dataset options
             load_kwargs = {
-                'path': path,
                 'name': name,
                 'data_dir': data_dir,
                 'data_files': data_files,
@@ -330,22 +334,18 @@ class DatasetMigrator:
                 'num_proc': num_proc,
                 'storage_options': storage_options,
                 'trust_remote_code': trust_remote_code,
-                **config_kwargs,
             }
 
             # Remove None values
             load_kwargs = {k: v for k, v in load_kwargs.items() if v is not None}
 
+            load_kwargs.update(config_kwargs)
+
             # Parse id_fields into a list
-            if id_fields:
-                id_fields_list = [field.strip() for field in id_fields.split(',') if field.strip()]
-                if not id_fields_list:
-                    id_fields_list = None
-            else:
-                id_fields_list = None
+            id_fields_list = [field.strip() for field in id_fields.split(',')] if id_fields else None
 
             # Load the dataset from Hugging Face
-            dataset = load_dataset(**load_kwargs)
+            dataset = load_dataset(path, **load_kwargs)
 
             # Establish Couchbase connection
             self.connect(cb_url, cb_username, cb_password, cb_bucket, cb_scope, cb_collection)
@@ -353,83 +353,98 @@ class DatasetMigrator:
             total_records = 0
 
             # Function to construct document ID
-            def construct_doc_id(example):
+            def construct_doc_id(example: Dict[str, Any]) -> str:
                 if id_fields_list:
                     try:
                         id_values = [str(example[field]) for field in id_fields_list]
-                        doc_id = '_'.join(id_values)
-                        return doc_id
+                        return '_'.join(id_values)
                     except KeyError as e:
                         raise ValueError(f"Field '{e.args[0]}' not found in the dataset examples.")
-                else:
-                    return str(uuid.uuid4())
+                return str(uuid.uuid4())
 
             # Validate id_fields before processing
             if id_fields_list:
-                missing_fields = [field for field in id_fields_list if field not in dataset.column_names]
+                if isinstance(dataset, (DatasetDict, IterableDatasetDict)):
+                    first_dataset = next(iter(dataset.values()))
+                else:
+                    first_dataset = dataset
+                
+                missing_fields = [field for field in id_fields_list 
+                                if field not in first_dataset.column_names]
                 if missing_fields:
                     raise ValueError(f"The following id_fields are not present in the dataset: {missing_fields}")
 
-            # If dataset is a dict (multiple splits), iterate over each split
+            # Process the dataset
             if isinstance(dataset, (DatasetDict, IterableDatasetDict)):
                 for split_name, split_dataset in dataset.items():
                     logger.info(f"Processing split '{split_name}'...")
-                    self._process_and_insert_split(
+                    total_records = self._process_and_insert_split(
                         split_dataset, split_name, construct_doc_id, batch_size, total_records
                     )
             else:
-                # Dataset is a single split
-                split_name = str(split) if split else None
-                logger.info(f"Processing split '{split_name}'...")
-                self._process_and_insert_split(
+                split_name = None # No split name for single dataset
+                logger.info(f"Processing Dataset '{path}'...")
+                total_records = self._process_and_insert_split(
                     dataset, split_name, construct_doc_id, batch_size, total_records
                 )
 
-            logger.info(f"Total records migrated: {total_records}")
-            return True
+            logger.info(f"Migration completed successfully. Total records migrated: {total_records}")
+
         except Exception as e:
-            logger.error(f"An error occurred during migration: {e}")
-            return False
+            raise
         finally:
             self.close()
 
     def _process_and_insert_split(
         self,
-        split_dataset,
-        split_name: Union[str, None],
-        construct_doc_id,
+        split_dataset: Union[Dataset, IterableDataset],
+        split_name: Optional[str],
+        construct_doc_id: Callable[[Dict[str, Any]], str],
         batch_size: int,
         total_records: int,
-    ) -> None:
+    ) -> int:
         """
         Processes and inserts a dataset split into Couchbase.
 
-        :param split_dataset: The dataset split to process.
+        :param split_dataset: The dataset split to process (can be Dataset or IterableDataset)
         :param split_name: Name of the split.
         :param construct_doc_id: Function to construct document IDs.
         :param batch_size: Number of documents to insert per batch.
         :param total_records: Total records processed so far.
+        :return: Updated total records count
         """
-        batch = {}
-        for example in split_dataset:
-            doc_id = construct_doc_id(example)
-            # Include split name in the document
-            example_with_split = dict(example)
-            example_with_split['split'] = split_name
-            batch[doc_id] = example_with_split
-            total_records += 1
+        try:
+            batch: Dict[str, Any] = {}
+            processed_count = 0
+            
+            # Handle both Dataset and IterableDataset
+            # IterableDataset is used when streaming=True
+            for example in split_dataset:
+                # Convert example to dict if it's not already
+                if not isinstance(example, dict):
+                    example = dict(example)
+                    
+                doc_id = construct_doc_id(example)
+                example_with_split = dict(example)
+                if split_name is not None:
+                    example_with_split['split'] = split_name
+                batch[doc_id] = example_with_split
+                processed_count += 1
 
-            # Batch insert when batch size is reached
-            if len(batch) >= batch_size:
+                # Batch insert when batch size is reached
+                if len(batch) >= batch_size:
+                    self.insert_multi(batch)
+                    batch = {}
+                    logger.info(f"Processed {total_records + processed_count} records...")
+
+            # Insert remaining documents in batch
+            if batch:
                 self.insert_multi(batch)
-                batch.clear()
-                logger.info(f"{total_records} records migrated...")
+                logger.info(f"Processed {total_records + processed_count} records...")
 
-        # Insert remaining documents in batch
-        if batch:
-            self.insert_multi(batch)
-            logger.info(f"{total_records} records migrated...")
-            batch.clear()
+            return total_records + processed_count
+        except Exception as e:
+            raise Exception(f"Error processing split '{split_name}': {e}")
 
     def insert_multi(self, batch: Dict[str, Any]) -> None:
         """
@@ -438,10 +453,9 @@ class DatasetMigrator:
         :param batch: A dictionary where keys are document IDs and values are documents.
         """
         try:
-            result: MultiMutationResult = self.collection.insert_multi(batch)
+            result: MultiMutationResult = self.collection.upsert_multi(batch)
         except CouchbaseException as e:
-            logger.error(f"Couchbase write error: {e}")
-            raise
+            raise Exception(f"Couchbase write error: {e}")
 
         if not result.all_ok and result.exceptions:
             duplicate_ids = []
@@ -454,5 +468,4 @@ class DatasetMigrator:
             if duplicate_ids:
                 logger.warning(f"Documents with IDs already exist: {', '.join(duplicate_ids)}")
             if other_errors:
-                logger.error(f"Errors occurred during batch insert: {other_errors}")
-                raise Exception(f"Failed to write some documents to Couchbase: {other_errors}") 
+                raise Exception(f"Failed to write some documents to Couchbase: {other_errors}")
