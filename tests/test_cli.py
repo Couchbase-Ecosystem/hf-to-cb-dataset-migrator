@@ -55,7 +55,7 @@ class TestCLI(unittest.TestCase):
         inputs = '\n'.join(['couchbase://localhost', 'user', 'pass', 'bucket'])
 
         # Test with minimum options
-        result = self.runner.invoke(main, ['migrate', '--path', 'test_dataset', '--id-fields', 'id'], input=inputs)
+        result = self.runner.invoke(main, ['migrate', '--path', 'test_dataset', '--id-fields', 'id', '--cb-scope', 'test-scope'], input=inputs)
         # Assert that the migrate_dataset method was called with the correct arguments
         mock_migrator.migrate_dataset.assert_called_once_with(
             path='test_dataset',
@@ -63,7 +63,7 @@ class TestCLI(unittest.TestCase):
             cb_username='user',
             cb_password='pass',
             cb_bucket='bucket',
-            cb_scope=None, 
+            cb_scope='test-scope', 
             cb_collection=None, 
             id_fields='id',
             name=None, 
@@ -80,7 +80,8 @@ class TestCLI(unittest.TestCase):
             streaming=True, 
             num_proc=None, 
             storage_options=None, 
-            trust_remote_code=None
+            trust_remote_code=None,
+            batch_size=1000
         )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Migration completed successfully.", result.output)
@@ -130,7 +131,8 @@ class TestCLI(unittest.TestCase):
         streaming=True, 
         num_proc=None, 
         storage_options=None, 
-        trust_remote_code=None
+        trust_remote_code=None,
+        batch_size=1000
     )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Starting migration of dataset 'test_dataset' to Couchbase bucket 'bucket'...", result.output)
@@ -139,15 +141,53 @@ class TestCLI(unittest.TestCase):
     @patch('hf_to_cb_dataset_migrator.cli.DatasetMigrator')
     def test_migrate_cmd_failure(self, mock_migrator_class):
         mock_migrator = MagicMock()
-        mock_migrator.migrate_dataset.return_value = False
+        mock_migrator.migrate_dataset.side_effect = Exception("Migration failed")
         mock_migrator_class.return_value = mock_migrator
 
-        inputs = '\n'.join(['couchbase://localhost', 'user', 'pass', 'bucket'])
-        result = self.runner.invoke(main, ['migrate', '--path', 'test_dataset', '--id-fields', 'id'], input=inputs)
-        self.assertEqual(result.exit_code, 0)
+        result = self.runner.invoke(
+            main,
+            [
+                'migrate',
+                '--path', 'test_dataset',
+                '--id-fields', 'id',
+                '--cb-url', 'couchbase://localhost',
+                '--cb-username', 'user',
+                '--cb-password', 'pass',
+                '--cb-bucket', 'bucket',
+                '--cb-scope', 'scope',
+                '--cb-collection', 'collection'
+            ]
+        )
+
+        mock_migrator.migrate_dataset.assert_called_once_with(
+            path='test_dataset',
+            id_fields='id',
+            cb_url='couchbase://localhost',
+            cb_username='user',
+            cb_password='pass',
+            cb_bucket='bucket',
+            cb_scope='scope',
+            cb_collection='collection',
+            split=None,
+            token=None,
+            name=None,
+            data_files=None,
+            cache_dir=None,
+            download_config=None,
+            download_mode=None,
+            verification_mode=None,
+            keep_in_memory=False,
+            save_infos=False,
+            revision=None,
+            streaming=True,
+            num_proc=None,
+            storage_options=None,
+            trust_remote_code=None,
+            batch_size=1000
+        )
+        self.assertEqual(result.exit_code, 1)
         self.assertIn("Starting migration of dataset 'test_dataset' to Couchbase bucket 'bucket'...", result.output)
-        self.assertIn("Migration failed.", result.output)
-        mock_migrator.migrate_dataset.assert_called_once()
+        self.assertIn("Migration failed", result.output)
 
     def test_main_help(self):
         result = self.runner.invoke(main, ['--help'])
@@ -202,6 +242,7 @@ class TestCLI(unittest.TestCase):
                 '--cb-username', 'user',
                 '--cb-password', 'pass',
                 '--cb-bucket', 'test_bucket',
+                '--cb-scope', 'scope'
             ]
         )
 
@@ -213,6 +254,63 @@ class TestCLI(unittest.TestCase):
         self.assertIn('"cb_username": "user"', result.output)
         self.assertIn('"cb_password": "pass"', result.output)
         self.assertIn('"cb_bucket": "test_bucket"', result.output)    
+
+    @patch('hf_to_cb_dataset_migrator.cli.DatasetMigrator')
+    def test_list_fields_with_split(self, mock_migrator_class):
+        mock_migrator = MagicMock()
+        mock_migrator.list_fields.return_value = ['field1', 'field2']
+        mock_migrator_class.return_value = mock_migrator
+
+        # Test with minimum options
+        result = self.runner.invoke(main, [
+            'list-fields',
+            '--path', 'test_dataset',
+            '--split', 'train',
+            '--token', 'dummy_token'
+        ])
+
+        # Assert that the list_fields method was called with the correct arguments
+        mock_migrator.list_fields.assert_called_once_with(
+            path='test_dataset',
+            name=None,
+            data_files=None,
+            revision=None,
+            split='train'
+        )
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Fields:", result.output)
+        self.assertIn("field1", result.output)
+        self.assertIn("field2", result.output)
+
+        # Reset mock for next test
+        mock_migrator.reset_mock()
+
+        # Test with all options
+        result = self.runner.invoke(
+            main,
+            [
+                'list-fields',
+                '--path', 'test_dataset',
+                '--name', 'config1',
+                '--split', 'train',
+                '--token', 'dummy_token',
+                '--revision', '1.0.0',
+                '--data-files', 'file1.csv',
+                '--data-files', 'file2.csv',
+                '--json-output'
+            ]
+        )
+
+        mock_migrator.list_fields.assert_called_once_with(
+            path='test_dataset',
+            name='config1',
+            data_files=['file1.csv', 'file2.csv'],
+            revision='1.0.0',
+            split='train'
+        )
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn('"field1"', result.output)
+        self.assertIn('"field2"', result.output)
 
 
 if __name__ == '__main__':

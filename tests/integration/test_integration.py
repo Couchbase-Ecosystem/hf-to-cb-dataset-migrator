@@ -11,6 +11,8 @@ import logging
 from couchbase.cluster import Cluster
 from couchbase.auth import PasswordAuthenticator
 from couchbase.options import ClusterOptions
+from datasets import Dataset, DatasetDict
+from tempfile import TemporaryDirectory
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -438,3 +440,17 @@ def validate_migrated_data(
     except Exception as e:
         logger.error(f"Validation failed: {str(e)}")
         raise e
+
+def test_list_fields_integration_with_split(cli_runner):
+    """Test list-fields command with split option using a public dataset"""
+    # Use a small, public dataset
+    result = cli_runner.invoke(main, [
+        'list-fields',
+        '--path', 'rotten_tomatoes',  # Using the rotten_tomatoes dataset as it's small and public
+        '--split', 'train'
+    ])
+    
+    assert result.exit_code == 0
+    # Check for known fields in the rotten_tomatoes dataset
+    assert 'text' in result.output
+    assert 'label' in result.output

@@ -8,6 +8,7 @@ from hf_to_cb_dataset_migrator.migration import DatasetMigrator
 from hf_to_cb_dataset_migrator.utils import generate_help
 from typing import Any, Optional
 import logging
+import multiprocessing
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -174,10 +175,11 @@ list_fields_help = generate_help("List the fields (columns) of a dataset.", [
 @click.option('--data-files', multiple=True, help='Paths to source data files (optional).')
 @click.option('--revision', default=None, help='Version of the dataset script to load (optional).')
 @click.option('--token', default=None, help='Hugging Face token for private datasets (optional).')
+@click.option('--split', default=None, help='Which split of the data to load (optional).')
 @click.option('--json-output', is_flag=True, help='Output the fields in JSON format.')
 @click.option('--debug', is_flag=True, help='Enable debug output.')
 @click.pass_context
-def list_fields(ctx, path, name, data_files, revision, token, json_output, debug):
+def list_fields(ctx, path, name, data_files, revision, token, split, json_output, debug):
     
     # this is code for mock the cli library for cbmigrate testing
     if os.getenv(MOCK_CLI_ENV_VAR, "false") == "true":
@@ -196,7 +198,8 @@ def list_fields(ctx, path, name, data_files, revision, token, json_output, debug
             path=path,
             name=name,
             data_files=list(data_files) if data_files else None,
-            revision=revision
+            revision=revision,
+            split=split
         )
         if json_output:
             click.echo(json.dumps(fields))
@@ -345,4 +348,5 @@ def migrate(
     
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
     main(prog_name=prog_name)

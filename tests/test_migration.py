@@ -56,9 +56,9 @@ class TestDatasetMigrator(unittest.TestCase):
     @patch('hf_to_cb_dataset_migrator.migration.load_dataset')
     @patch.object(DatasetMigrator, 'connect')
     @patch.object(DatasetMigrator, 'close')
-    @patch.object(DatasetMigrator, 'insert_multi')
+    @patch.object(DatasetMigrator, 'upsert_multi')
     def test_migrate_dataset(
-        self, mock_insert_multi, mock_close, mock_connect, mock_load_dataset
+        self, mock_upsert_multi, mock_close, mock_connect, mock_load_dataset
     ):
         # Mock dataset
         mock_dataset = Dataset.from_dict({
@@ -95,21 +95,21 @@ class TestDatasetMigrator(unittest.TestCase):
             batch_size=1,
         )
 
-        self.assertTrue(result)
+        self.assertIsNone(result)
         mock_connect.assert_called_once()
         mock_close.assert_called_once()
-        mock_insert_multi.assert_called()
+        mock_upsert_multi.assert_called()
         mock_load_dataset.assert_called_once()
 
     @patch('hf_to_cb_dataset_migrator.migration.load_dataset')
     @patch.object(DatasetMigrator, 'connect')
     @patch.object(DatasetMigrator, 'close')
-    @patch.object(DatasetMigrator, 'insert_multi')
+    @patch.object(DatasetMigrator, 'upsert_multi')
     def test_migrate_dataset_exception(
-        self, mock_insert_multi, mock_close, mock_connect, mock_load_dataset
+        self, mock_upsert_multi, mock_close, mock_connect, mock_load_dataset
     ):
         # Simulate an exception during migration
-        mock_insert_multi.side_effect = CouchbaseException(message="Test Exception")
+        mock_upsert_multi.side_effect = CouchbaseException(message="Test Exception")
 
         # Mock dataset
         mock_dataset = Dataset.from_dict({
@@ -118,7 +118,7 @@ class TestDatasetMigrator(unittest.TestCase):
         })
         mock_load_dataset.return_value = mock_dataset
 
-        with self.assertLogs('hf_to_cb_dataset_migrator.migration', level='ERROR') as cm:
+        with self.assertRaises(Exception) as cm:
             result = self.migrator.migrate_dataset(
                 path='test_dataset',
                 cb_url='couchbase://localhost',
@@ -132,36 +132,36 @@ class TestDatasetMigrator(unittest.TestCase):
             )
 
             self.assertFalse(result)
-            self.assertIn("Error processing split", cm.output[0])
+            self.assertIn("Error processing split", cm.exception)
 
-    def test_insert_multi_success(self):
-        # Mock insert_multi to simulate successful insertion
+    def test_upsert_multi_success(self):
+        # Mock upsert_multi to simulate successful insertion
         self.migrator.collection = MagicMock()
-        # Mock insert_multi to simulate successful insertion
+        # Mock upsert_multi to simulate successful insertion
         mock_result = MagicMock()
         mock_result.all_ok = True
         mock_result.exceptions = {}
-        self.migrator.collection.insert_multi.return_value = mock_result
+        self.migrator.collection.upsert_multi.return_value = mock_result
 
         batch = {
             'doc1': {'id': 1, 'text': 'Hello'},
             'doc2': {'id': 2, 'text': 'World'}
         }
 
-        self.migrator.insert_multi(batch)
-        self.migrator.collection.insert_multi.assert_called_once_with(batch)
+        self.migrator.upsert_multi(batch)
+        self.migrator.collection.upsert_multi.assert_called_once_with(batch)
 
-    def test_insert_multi_failure(self):
+    def test_upsert_multi_failure(self):
         # Mock collection
         self.migrator.collection = MagicMock()
-        # Mock insert_multi to simulate failure
+        # Mock upsert_multi to simulate failure
         mock_result = MagicMock()
         mock_result.all_ok = False
         mock_result.exceptions = {
             'doc1': DocumentExistsException(),
-            'doc2': CouchbaseException(message='Insert failed')
+            'doc2': CouchbaseException(message='Upsert failed')
         }
-        self.migrator.collection.insert_multi.return_value = mock_result
+        self.migrator.collection.upsert_multi.return_value = mock_result
 
         batch = {
             'doc1': {'id': 1, 'text': 'Hello'},
@@ -169,10 +169,10 @@ class TestDatasetMigrator(unittest.TestCase):
         }
 
         with self.assertRaises(Exception) as context:
-            self.migrator.insert_multi(batch)
+            self.migrator.upsert_multi(batch)
 
         self.assertIn("Failed to write some documents to Couchbase", str(context.exception))
-        self.migrator.collection.insert_multi.assert_called_once_with(batch)
+        self.migrator.collection.upsert_multi.assert_called_once_with(batch)
 
     @patch('hf_to_cb_dataset_migrator.migration.Cluster')
     def test_connect_success(self, mock_cluster_class):
@@ -344,7 +344,7 @@ class TestDatasetMigrator(unittest.TestCase):
         # Simulate connection failure
         mock_cluster_class.side_effect = CouchbaseException(message='Connection failed')
 
-        with self.assertRaises(CouchbaseException):
+        with self.assertRaises(Exception) as e:
             self.migrator.connect(
                 cb_url='couchbase://localhost',
                 cb_username='user',
@@ -353,6 +353,7 @@ class TestDatasetMigrator(unittest.TestCase):
                 cb_scope='test_scope',
                 cb_collection='test_collection',
             )
+        self.assertEqual(str(e.exception), str(Exception(f"Failed to connect to Couchbase cluster: {mock_cluster_class.side_effect}")))    
 
     def test_close(self):
         # Test close method when cluster is connected
@@ -399,7 +400,7 @@ class TestDatasetMigrator(unittest.TestCase):
         with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load_dataset, \
              patch.object(DatasetMigrator, 'connect') as mock_connect, \
              patch.object(DatasetMigrator, 'close') as mock_close, \
-             patch.object(DatasetMigrator, 'insert_multi') as mock_insert_multi:
+             patch.object(DatasetMigrator, 'upsert_multi') as mock_upsert_multi:
             
             mock_load_dataset.return_value = mock_dataset
             
@@ -415,12 +416,12 @@ class TestDatasetMigrator(unittest.TestCase):
                 batch_size=1
             )
 
-            self.assertTrue(result)
+            self.assertIsNone(result)
             expected_calls = [
                 call({'u1_p1': {'user_id': 'u1', 'post_id': 'p1', 'text': 'Hello'}}),
                 call({'u2_p2': {'user_id': 'u2', 'post_id': 'p2', 'text': 'World'}})
             ]
-            mock_insert_multi.assert_has_calls(expected_calls)
+            mock_upsert_multi.assert_has_calls(expected_calls)
 
     def test_migrate_dataset_with_splits(self):
         # Mock datasets with splits
@@ -443,7 +444,7 @@ class TestDatasetMigrator(unittest.TestCase):
         with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load_dataset, \
              patch.object(DatasetMigrator, 'connect') as mock_connect, \
              patch.object(DatasetMigrator, 'close') as mock_close, \
-             patch.object(DatasetMigrator, 'insert_multi') as mock_insert_multi:
+             patch.object(DatasetMigrator, 'upsert_multi') as mock_upsert_multi:
             
             mock_load_dataset.return_value = mock_dataset_dict
             
@@ -459,12 +460,12 @@ class TestDatasetMigrator(unittest.TestCase):
                 batch_size=1
             )
 
-            self.assertTrue(result)
+            self.assertIsNone(result)
             expected_calls = [
                 call({'1': {'id': 1, 'text': 'Train', 'split': 'train'}}),
                 call({'2': {'id': 2, 'text': 'Test', 'split': 'test'}})
             ]
-            mock_insert_multi.assert_has_calls(expected_calls)
+            mock_upsert_multi.assert_has_calls(expected_calls)
 
     def test_migrate_dataset_batch_processing(self):
         # Mock dataset with multiple records
@@ -478,10 +479,10 @@ class TestDatasetMigrator(unittest.TestCase):
         with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load_dataset, \
              patch.object(DatasetMigrator, 'connect') as mock_connect, \
              patch.object(DatasetMigrator, 'close') as mock_close, \
-             patch.object(DatasetMigrator, 'insert_multi') as mock_insert_multi:
+             patch.object(DatasetMigrator, 'upsert_multi') as mock_upsert_multi:
             
             mock_load_dataset.return_value = mock_dataset
-            mock_insert_multi.return_value = None  # Ensure insert_multi doesn't raise any exceptions
+            mock_upsert_multi.return_value = None  # Ensure upsert_multi doesn't raise any exceptions
             
             result = self.migrator.migrate_dataset(
                 path='test_dataset',
@@ -495,7 +496,7 @@ class TestDatasetMigrator(unittest.TestCase):
                 batch_size=2
             )
 
-            self.assertTrue(result)
+            self.assertIsNone(result)
             expected_calls = [
                 call({
                     '1': {'id': 1, 'text': 'Text1'},
@@ -509,7 +510,64 @@ class TestDatasetMigrator(unittest.TestCase):
                     '5': {'id': 5, 'text': 'Text5'}
                 })
             ]
-            mock_insert_multi.assert_has_calls(expected_calls)
+            mock_upsert_multi.assert_has_calls(expected_calls)
+
+    def test_list_fields_with_split(self):
+        # Create mock dataset
+        mock_dataset = MagicMock(spec=Dataset)
+        mock_dataset.column_names = ['field1', 'field2']
+        
+        # Mock load_dataset function
+        with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load:
+            mock_load.return_value = mock_dataset
+            
+            migrator = DatasetMigrator()
+            fields = migrator.list_fields(
+                path='test_dataset',
+                split='train'
+            )
+            
+            # Verify load_dataset was called with correct parameters
+            mock_load.assert_called_once_with(
+                path='test_dataset',
+                name=None,
+                data_files=None,
+                revision=None,
+                use_auth_token=None,
+                split='train'
+            )
+            
+            assert fields == ['field1', 'field2']
+
+    def test_list_fields_with_dataset_dict(self):
+        # Create mock dataset dictionary
+        mock_train_dataset = MagicMock(spec=Dataset)
+        mock_train_dataset.column_names = ['field1', 'field2']
+        
+        mock_dataset_dict = DatasetDict({
+            'train': mock_train_dataset
+        })
+        
+        # Mock load_dataset function
+        with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load:
+            mock_load.return_value = mock_dataset_dict
+            
+            migrator = DatasetMigrator()
+            fields = migrator.list_fields(
+                path='test_dataset'
+            )
+            
+            # Verify load_dataset was called with correct parameters
+            mock_load.assert_called_once_with(
+                path='test_dataset',
+                name=None,
+                data_files=None,
+                revision=None,
+                use_auth_token=None,
+                split=None
+            )
+            
+            assert fields == ['field1', 'field2']
 
 
 if __name__ == '__main__':

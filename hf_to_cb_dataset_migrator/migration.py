@@ -210,6 +210,7 @@ class DatasetMigrator:
         data_files: Optional[Union[str, Sequence[str], Mapping[str, Union[str, Sequence[str]]]]] = None,
         revision: Optional[Union[str, Version]] = None,
         token: Optional[str] = None,
+        split: Optional[str] = None,
         **load_dataset_kwargs
     ) -> List[str]:
         """
@@ -220,6 +221,7 @@ class DatasetMigrator:
         :param data_files: Paths to source data files (optional).
         :param revision: Version of the dataset script to load (optional).
         :param token: Hugging Face token for private datasets (optional).
+        :param split: Which split of the data to load (optional).
         :param load_dataset_kwargs: Additional arguments to pass to load_dataset.
         :return: List of field names.
         """
@@ -230,9 +232,11 @@ class DatasetMigrator:
                 data_files=data_files,
                 revision=revision,
                 use_auth_token=token,
+                split=split,
                 **load_dataset_kwargs
             )
-            # If the dataset is a DatasetDict (multiple splits), pick one split
+            
+            # If the dataset is a DatasetDict (multiple splits)
             if isinstance(dataset, DatasetDict):
                 dataset_split = next(iter(dataset.values()))
             else:
@@ -433,22 +437,22 @@ class DatasetMigrator:
 
                 # Batch insert when batch size is reached
                 if len(batch) >= batch_size:
-                    self.insert_multi(batch)
+                    self.upsert_multi(batch)
                     batch = {}
                     logger.info(f"Processed {total_records + processed_count} records...")
 
             # Insert remaining documents in batch
             if batch:
-                self.insert_multi(batch)
+                self.upsert_multi(batch)
                 logger.info(f"Processed {total_records + processed_count} records...")
 
             return total_records + processed_count
         except Exception as e:
             raise Exception(f"Error processing split '{split_name}': {e}")
 
-    def insert_multi(self, batch: Dict[str, Any]) -> None:
+    def upsert_multi(self, batch: Dict[str, Any]) -> None:
         """
-        Performs a batch insert operation using insert_multi.
+        Performs a batch insert operation using upsert_multi.
 
         :param batch: A dictionary where keys are document IDs and values are documents.
         """
