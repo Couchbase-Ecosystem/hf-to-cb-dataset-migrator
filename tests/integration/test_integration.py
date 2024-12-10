@@ -10,7 +10,7 @@ from typing import List
 import logging
 from couchbase.cluster import Cluster
 from couchbase.auth import PasswordAuthenticator
-from couchbase.options import ClusterOptions
+from couchbase.options import ClusterOptions, KnownConfigProfiles
 from datasets import Dataset, DatasetDict
 from tempfile import TemporaryDirectory
 
@@ -67,7 +67,9 @@ def cleanup_collection():
     """Fixture to clean up test collection before and after each test"""
     def _cleanup_collection(scope_name: str, collection_name: str):
         auth = PasswordAuthenticator(COUCHBASE_USERNAME, COUCHBASE_PASSWORD)
-        cluster = Cluster(COUCHBASE_URL, ClusterOptions(auth))
+        cluster_opts = ClusterOptions(auth)
+        cluster_opts.apply_profile(KnownConfigProfiles.WanDevelopment)
+        cluster = Cluster(COUCHBASE_URL, cluster_opts)
         bucket = cluster.bucket(COUCHBASE_BUCKET)
         
         try:
@@ -416,7 +418,9 @@ def validate_migrated_data(
     try:
         # Connect to Couchbase
         auth = PasswordAuthenticator(cb_username, cb_password)
-        cluster = Cluster(cb_url, ClusterOptions(auth))
+        cluster_opts = ClusterOptions(auth)
+        cluster_opts.apply_profile(KnownConfigProfiles.WanDevelopment)
+        cluster = Cluster(cb_url, cluster_opts)
         bucket = cluster.bucket(cb_bucket)
         scope = bucket.scope(cb_scope)
         collection = scope.collection(cb_collection)

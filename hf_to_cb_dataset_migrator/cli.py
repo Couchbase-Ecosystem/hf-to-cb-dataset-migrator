@@ -64,14 +64,15 @@ def list_configs_cmd(ctx, path, revision, download_config, download_mode, dynami
         logging.basicConfig(level=logging.DEBUG)
 
     migrator = DatasetMigrator(token=token)
+    
+    download_config_dict = None
     if download_config:
         try:
             download_config_dict = json.loads(download_config)
         except json.JSONDecodeError as e:
             click.echo(f"Error parsing download_config JSON: {e}", err=True)
             sys.exit(1)
-    else:
-        download_config_dict = None
+        
 
     download_kwargs = {
         'revision': revision,
@@ -137,6 +138,7 @@ def list_splits_cmd(ctx, path, config_name, data_files, download_config, downloa
     elif debug:
         logging.basicConfig(level=logging.DEBUG)
         
+    download_config_dict = None
     if download_config:
         try:
             download_config_dict = json.loads(download_config)
@@ -207,6 +209,7 @@ def list_fields(ctx, path, name, data_files, download_config, revision, token, s
     elif debug:
         logging.basicConfig(level=logging.DEBUG)
 
+    download_config_dict = None
     if download_config:
         try:
             download_config_dict = json.loads(download_config)
@@ -333,6 +336,7 @@ def migrate(
     if debug:
         logging.basicConfig(level=logging.DEBUG)
 
+    download_config_dict = None
     if download_config:
         try:
             download_config_dict = json.loads(download_config)
