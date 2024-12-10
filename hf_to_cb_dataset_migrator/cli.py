@@ -49,9 +49,11 @@ list_configs_help = generate_help("List all configuration names for a given data
 @click.option('--token',default=None, help='Use authentication token for private datasets.')
 @click.option('--json-output', is_flag=True, help='Output the configurations in JSON format.')
 @click.option('--debug', is_flag=True, help='Enable debug output.')
+@click.option('--trust-remote-code', is_flag=True, default=None,
+              help='Allow loading arbitrary code from the dataset repository (optional).')
 @click.pass_context
 def list_configs_cmd(ctx, path, revision, download_config, download_mode, dynamic_modules_path,
-                     data_files, token, json_output, debug):
+                     data_files, token, json_output, debug, trust_remote_code):
     # this is code for mock the cli library for cbmigrate testing
     if os.getenv(MOCK_CLI_ENV_VAR, "false") == "true":
         pre_function(ctx)
@@ -77,6 +79,7 @@ def list_configs_cmd(ctx, path, revision, download_config, download_mode, dynami
         'download_mode': download_mode,
         'dynamic_modules_path': dynamic_modules_path,
         'data_files': data_files if data_files else None,
+        'trust_remote_code': trust_remote_code,
     }
     # Remove None values
     download_kwargs = {k: v for k, v in download_kwargs.items() if v is not None}
@@ -118,9 +121,11 @@ list_splits_help = generate_help("List all available splits for a given dataset 
 @click.option('--token', default=None, help='Authentication token for private datasets (optional).')
 @click.option('--json-output', is_flag=True, help='Output the splits in JSON format.')
 @click.option('--debug', is_flag=True, help='Enable debug output.')
+@click.option('--trust-remote-code', is_flag=True, default=None,
+              help='Allow loading arbitrary code from the dataset repository (optional).')
 @click.pass_context
 def list_splits_cmd(ctx, path, config_name, data_files, download_config, download_mode, revision, token,
-                    json_output, debug):
+                    json_output, debug, trust_remote_code):
     
     # this is code for mock the cli library for cbmigrate testing
     if os.getenv(MOCK_CLI_ENV_VAR, "false") == "true":
@@ -132,13 +137,21 @@ def list_splits_cmd(ctx, path, config_name, data_files, download_config, downloa
     elif debug:
         logging.basicConfig(level=logging.DEBUG)
         
+    if download_config:
+        try:
+            download_config_dict = json.loads(download_config)
+        except json.JSONDecodeError as e:
+            click.echo(f"Error parsing download_config JSON: {e}", err=True)
+            sys.exit(1)
+
     migrator = DatasetMigrator(token=token)
 
     config_kwargs = {
         'data_files': data_files if data_files else None,
-        'download_config': json.load(download_config) if download_config else None,
+        'download_config': download_config_dict,
         'download_mode': download_mode,
         'revision': revision,
+        'trust_remote_code': trust_remote_code,
     }
     # Remove None values
     config_kwargs = {k: v for k, v in config_kwargs.items() if v is not None}
@@ -173,13 +186,16 @@ list_fields_help = generate_help("List the fields (columns) of a dataset.", [
 @click.option('--path', required=True, help='Path or name of the dataset.')
 @click.option('--name', help='Name of the dataset configuration (optional).')
 @click.option('--data-files', multiple=True, help='Paths to source data files (optional).')
+@click.option('--download-config', default=None, help='Specific download configuration parameters (optional).')
 @click.option('--revision', default=None, help='Version of the dataset script to load (optional).')
 @click.option('--token', default=None, help='Hugging Face token for private datasets (optional).')
 @click.option('--split', default=None, help='Which split of the data to load (optional).')
 @click.option('--json-output', is_flag=True, help='Output the fields in JSON format.')
 @click.option('--debug', is_flag=True, help='Enable debug output.')
+@click.option('--trust-remote-code', is_flag=True, default=None,
+              help='Allow loading arbitrary code from the dataset repository (optional).')
 @click.pass_context
-def list_fields(ctx, path, name, data_files, revision, token, split, json_output, debug):
+def list_fields(ctx, path, name, data_files, download_config, revision, token, split, json_output, debug, trust_remote_code):
     
     # this is code for mock the cli library for cbmigrate testing
     if os.getenv(MOCK_CLI_ENV_VAR, "false") == "true":
@@ -191,6 +207,13 @@ def list_fields(ctx, path, name, data_files, revision, token, split, json_output
     elif debug:
         logging.basicConfig(level=logging.DEBUG)
 
+    if download_config:
+        try:
+            download_config_dict = json.loads(download_config)
+        except json.JSONDecodeError as e:
+            click.echo(f"Error parsing download_config JSON: {e}", err=True)
+            sys.exit(1)
+
     migrator = DatasetMigrator(token=token)
 
     try:
@@ -198,8 +221,10 @@ def list_fields(ctx, path, name, data_files, revision, token, split, json_output
             path=path,
             name=name,
             data_files=list(data_files) if data_files else None,
+            download_config=download_config_dict,
             revision=revision,
-            split=split
+            split=split,
+            trust_remote_code=trust_remote_code
         )
         if json_output:
             click.echo(json.dumps(fields))
@@ -307,6 +332,15 @@ def migrate(
 
     if debug:
         logging.basicConfig(level=logging.DEBUG)
+
+    if download_config:
+        try:
+            download_config_dict = json.loads(download_config)
+        except json.JSONDecodeError as e:
+            click.echo(f"Error parsing download_config JSON: {e}", err=True)
+            sys.exit(1)
+
+
     click.echo(f"Starting migration of dataset '{path}' to Couchbase bucket '{cb_bucket}'...")
     migrator = DatasetMigrator(token=token)
 
@@ -328,7 +362,7 @@ def migrate(
             split=split,
             cache_dir=cache_dir,
             #features=features,
-            download_config=download_config,
+            download_config=download_config_dict,
             download_mode=download_mode,
             verification_mode=verification_mode,
             keep_in_memory=keep_in_memory,

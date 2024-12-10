@@ -129,6 +129,7 @@ class DatasetMigrator:
         download_mode: Union[DownloadMode, str, None] = None,
         dynamic_modules_path: Optional[str] = None,
         data_files: Union[Dict, List, str, None] = None,
+        trust_remote_code: Optional[bool] = None,
         **config_kwargs: Any,
     ) -> Optional[List[str]]:
         """
@@ -140,6 +141,7 @@ class DatasetMigrator:
         :param download_mode: Specifies the download mode.
         :param dynamic_modules_path: Path to dynamic modules for custom processing.
         :param data_files: Paths to source data files.
+        :param trust_remote_code: Allow loading arbitrary code from the dataset repository.
         :param config_kwargs: Additional keyword arguments for dataset configuration.
         :return: A list of configuration names if successful; None if an error occurs.
         """
@@ -148,6 +150,9 @@ class DatasetMigrator:
             # Include API key if provided
             if self.token:
                 config_kwargs['token'] = self.token
+
+            if trust_remote_code is not None:
+                config_kwargs['trust_remote_code'] = trust_remote_code
 
             configs = get_dataset_config_names(
                 path,
@@ -170,6 +175,7 @@ class DatasetMigrator:
         download_config: Optional[Dict] = None,
         download_mode: Union[DownloadMode, str, None] = None,
         revision: Union[str, Version, None] = None,
+        trust_remote_code: Optional[bool] = None,
         **config_kwargs: Any,
     ) -> Optional[List[str]]:
         """
@@ -181,6 +187,7 @@ class DatasetMigrator:
         :param download_config: Specific download configuration parameters.
         :param download_mode: Specifies the download mode.
         :param revision: Version of the dataset script to load.
+        :param trust_remote_code: Allow loading arbitrary code from the dataset repository.
         :param config_kwargs: Additional keyword arguments for configuration.
         :return: A list of split names if successful; None if an error occurs.
         """
@@ -189,6 +196,9 @@ class DatasetMigrator:
             # Include token if provided
             if self.token:
                 config_kwargs['token'] = self.token
+
+            if trust_remote_code is not None:
+                config_kwargs['trust_remote_code'] = trust_remote_code
 
             splits = get_dataset_split_names(
                 path,
@@ -208,6 +218,7 @@ class DatasetMigrator:
         path: str,
         name: Optional[str] = None,
         data_files: Optional[Union[str, Sequence[str], Mapping[str, Union[str, Sequence[str]]]]] = None,
+        download_config: Optional[Dict] = None,
         revision: Optional[Union[str, Version]] = None,
         token: Optional[str] = None,
         split: Optional[str] = None,
@@ -219,6 +230,7 @@ class DatasetMigrator:
         :param path: Path or name of the dataset.
         :param name: Name of the dataset configuration (optional).
         :param data_files: Paths to source data files (optional).
+        :param download_config: Specific download configuration parameters
         :param revision: Version of the dataset script to load (optional).
         :param token: Hugging Face token for private datasets (optional).
         :param split: Which split of the data to load (optional).
@@ -230,6 +242,7 @@ class DatasetMigrator:
                 path=path,
                 name=name,
                 data_files=data_files,
+                download_config=DownloadConfig(**download_config) if download_config else None,
                 revision=revision,
                 use_auth_token=token,
                 split=split,
