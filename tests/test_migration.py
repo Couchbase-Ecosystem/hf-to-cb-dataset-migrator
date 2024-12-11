@@ -2,6 +2,7 @@
 
 import unittest
 from unittest.mock import patch, MagicMock, Mock, call
+from datasets import IterableDatasetDict, IterableDataset
 from hf_to_cb_dataset_migrator.migration import DatasetMigrator
 from couchbase.exceptions import (
     CouchbaseException,
@@ -371,11 +372,9 @@ class TestDatasetMigrator(unittest.TestCase):
 
     def test_list_fields(self):
         # Mock dataset with known fields
-        mock_dataset = Dataset.from_dict({
-            'id': [1, 2],
-            'text': ['Hello', 'World'],
-            'label': [0, 1]
-        })
+        mock_dataset = MagicMock()
+        mock_example = {'id': 1, 'text': 'Hello', 'label': 0}
+        mock_dataset.__iter__.return_value = iter([mock_example])
 
         with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load_dataset:
             mock_load_dataset.return_value = mock_dataset
@@ -385,8 +384,89 @@ class TestDatasetMigrator(unittest.TestCase):
                 revision='1.0.0'
             )
             
-            self.assertEqual(fields, ['id', 'text', 'label'])
-            mock_load_dataset.assert_called_once()
+            self.assertEqual(set(fields), {'id', 'text', 'label'})
+            mock_load_dataset.assert_called_once_with(
+                path='test_dataset',
+                name=None,
+                data_files=None,
+                download_config=None,
+                revision='1.0.0',
+                token=self.token,
+                split=None,
+                streaming=True
+            )
+
+    def test_list_fields_with_split(self):
+        # Create mock streaming dataset
+        mock_dataset = MagicMock()
+        mock_example = {'field1': 'value1', 'field2': 'value2'}
+        mock_dataset.__iter__.return_value = iter([mock_example])
+        
+        with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load:
+            mock_load.return_value = mock_dataset
+            
+            migrator = DatasetMigrator()
+            fields = migrator.list_fields(
+                path='test_dataset',
+                split='train'
+            )
+            
+            # Verify load_dataset was called with correct parameters
+            mock_load.assert_called_once_with(
+                path='test_dataset',
+                name=None,
+                data_files=None,
+                download_config=None,
+                revision=None,
+                token=None,
+                split='train',
+                streaming=True
+            )
+            
+            self.assertEqual(set(fields), {'field1', 'field2'})
+
+    def test_list_fields_with_dataset_dict(self):
+        # Create mock streaming dataset dictionary
+        mock_train_dataset = MagicMock(spec=IterableDataset)
+        mock_train_dataset.__iter__.return_value = iter([{'field1': 'value1', 'field2': 'value2'}])
+        
+        mock_dataset_dict = MagicMock(spec=IterableDatasetDict)
+        mock_dataset_dict.values.return_value = iter([mock_train_dataset])
+        
+        with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load:
+            mock_load.return_value = mock_dataset_dict
+            
+            migrator = DatasetMigrator()
+            fields = migrator.list_fields(
+                path='test_dataset'
+            )
+            
+            # Verify load_dataset was called with correct parameters
+            mock_load.assert_called_once_with(
+                path='test_dataset',
+                name=None,
+                data_files=None,
+                download_config=None,
+                revision=None,
+                token=None,
+                split=None,
+                streaming=True
+            )
+            
+            self.assertEqual(set(fields), {'field1', 'field2'})
+
+    def test_list_fields_empty_dataset(self):
+        # Mock an empty dataset
+        mock_dataset = MagicMock()
+        mock_dataset.__iter__.return_value = iter([])  # Empty iterator
+
+        with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load_dataset:
+            mock_load_dataset.return_value = mock_dataset
+            
+            with self.assertRaises(Exception) as context:
+                self.migrator.list_fields(path='test_dataset')
+            
+            self.assertEqual(str(context.exception), "Error listing fields: Dataset is empty")
 
     def test_migrate_dataset_with_id_fields(self):
         # Mock dataset with multiple fields
@@ -511,63 +591,6 @@ class TestDatasetMigrator(unittest.TestCase):
                 })
             ]
             mock_upsert_multi.assert_has_calls(expected_calls)
-
-    def test_list_fields_with_split(self):
-        # Create mock dataset
-        mock_dataset = MagicMock(spec=Dataset)
-        mock_dataset.column_names = ['field1', 'field2']
-        
-        # Mock load_dataset function
-        with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load:
-            mock_load.return_value = mock_dataset
-            
-            migrator = DatasetMigrator()
-            fields = migrator.list_fields(
-                path='test_dataset',
-                split='train'
-            )
-            
-            # Verify load_dataset was called with correct parameters
-            mock_load.assert_called_once_with(
-                path='test_dataset',
-                name=None,
-                data_files=None,
-                revision=None,
-                use_auth_token=None,
-                split='train'
-            )
-            
-            assert fields == ['field1', 'field2']
-
-    def test_list_fields_with_dataset_dict(self):
-        # Create mock dataset dictionary
-        mock_train_dataset = MagicMock(spec=Dataset)
-        mock_train_dataset.column_names = ['field1', 'field2']
-        
-        mock_dataset_dict = DatasetDict({
-            'train': mock_train_dataset
-        })
-        
-        # Mock load_dataset function
-        with patch('hf_to_cb_dataset_migrator.migration.load_dataset') as mock_load:
-            mock_load.return_value = mock_dataset_dict
-            
-            migrator = DatasetMigrator()
-            fields = migrator.list_fields(
-                path='test_dataset'
-            )
-            
-            # Verify load_dataset was called with correct parameters
-            mock_load.assert_called_once_with(
-                path='test_dataset',
-                name=None,
-                data_files=None,
-                revision=None,
-                use_auth_token=None,
-                split=None
-            )
-            
-            assert fields == ['field1', 'field2']
 
 
 if __name__ == '__main__':

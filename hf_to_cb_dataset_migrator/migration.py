@@ -220,7 +220,6 @@ class DatasetMigrator:
         data_files: Optional[Union[str, Sequence[str], Mapping[str, Union[str, Sequence[str]]]]] = None,
         download_config: Optional[Dict] = None,
         revision: Optional[Union[str, Version]] = None,
-        token: Optional[str] = None,
         split: Optional[str] = None,
         **load_dataset_kwargs
     ) -> List[str]:
@@ -232,7 +231,6 @@ class DatasetMigrator:
         :param data_files: Paths to source data files (optional).
         :param download_config: Specific download configuration parameters
         :param revision: Version of the dataset script to load (optional).
-        :param token: Hugging Face token for private datasets (optional).
         :param split: Which split of the data to load (optional).
         :param load_dataset_kwargs: Additional arguments to pass to load_dataset.
         :return: List of field names.
@@ -244,20 +242,26 @@ class DatasetMigrator:
                 data_files=data_files,
                 download_config=DownloadConfig(**download_config) if download_config else None,
                 revision=revision,
-                use_auth_token=token,
+                token=self.token if self.token else None,
                 split=split,
+                streaming=True,
                 **load_dataset_kwargs
             )
             
-            # If the dataset is a DatasetDict (multiple splits)
-            if isinstance(dataset, DatasetDict):
+            # If the dataset is an IterableDatasetDict (multiple splits)
+            if isinstance(dataset, IterableDatasetDict):
                 dataset_split = next(iter(dataset.values()))
             else:
                 dataset_split = dataset
 
-            # Get the features (fields) of the dataset
-            fields = list(dataset_split.column_names)
-            return fields
+            # Get the first example to extract fields
+            try:
+                first_example = next(iter(dataset_split))
+                fields = list(first_example.keys())
+                return fields
+            except StopIteration:
+                raise Exception("Dataset is empty")
+                
         except Exception as e:
             raise Exception(f"Error listing fields: {e}")
     

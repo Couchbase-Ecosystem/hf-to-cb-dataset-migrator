@@ -99,7 +99,6 @@ def test_list_configs_with_name(cli_runner):
 
     assert result.exit_code == 0
     print("Available configurations for dataset requiring name:")
-    print(result.output)
 
 def test_list_splits_with_name(cli_runner):
     """
@@ -458,3 +457,128 @@ def test_list_fields_integration_with_split(cli_runner):
     # Check for known fields in the rotten_tomatoes dataset
     assert 'text' in result.output
     assert 'label' in result.output
+
+def test_list_configs_with_download_options(cli_runner):
+    """Test list-configs command with download configuration options"""
+    download_config = json.dumps({
+        "max_retries": 3,
+        "user_agent": "hf-to-cb-migrator/1.0"
+    })
+    
+    result = cli_runner.invoke(
+        main,
+        [
+            'list-configs',
+            '--path', DATASET_PATH_WITH_NAME,
+            '--download-config', download_config,
+            '--trust-remote-code',
+            '--token', HUGGINGFACE_TOKEN
+        ]
+    )
+    
+    assert result.exit_code == 0
+    assert "Available configurations" in result.output
+
+def test_list_splits_with_download_options(cli_runner):
+    """Test list-splits command with download configuration options"""
+    download_config = json.dumps({
+        "max_retries": 3,
+        "user_agent": "hf-to-cb-migrator/1.0",
+    })
+    
+    # First get a valid config name
+    result = cli_runner.invoke(
+        main,
+        ['list-configs', '--path', DATASET_PATH_WITH_NAME, '--json-output']
+    )
+    assert result.exit_code == 0
+    configs = json.loads(result.output)
+    config_name = configs[0] if configs else None
+    assert config_name is not None
+    
+    result = cli_runner.invoke(
+        main,
+        [
+            'list-splits',
+            '--path', DATASET_PATH_WITH_NAME,
+            '--name', config_name,
+            '--download-config', download_config,
+            '--trust-remote-code',
+            '--token', HUGGINGFACE_TOKEN
+        ]
+    )
+    assert result.exit_code == 0
+    assert "Available splits" in result.output
+
+def test_list_fields_with_download_options(cli_runner):
+    """Test list-fields command with download configuration options"""
+    download_config = json.dumps({
+        "max_retries": 5,
+        "user_agent": "hf-to-cb-migrator-test/1.0"
+    })
+    
+    # First get a valid config name
+    result = cli_runner.invoke(
+        main,
+        ['list-configs', '--path', DATASET_PATH_WITH_NAME, '--json-output']
+    )
+    assert result.exit_code == 0
+    configs = json.loads(result.output)
+    config_name = configs[0] if configs else None
+    assert config_name is not None
+    
+    result = cli_runner.invoke(
+        main,
+        [
+            'list-fields',
+            '--path', DATASET_PATH_WITH_NAME,
+            '--name', config_name,
+            '--download-config', download_config,
+            '--trust-remote-code',
+            '--token', HUGGINGFACE_TOKEN
+        ]
+    )
+    
+    assert result.exit_code == 0
+    assert "Fields:" in result.output
+
+def test_migrate_with_download_options(cli_runner, couchbase_inputs, cleanup_collection):
+    """Test migration with download configuration options"""
+    cleanup_collection('test_scope_download', 'test_collection_download')
+    
+    download_config = json.dumps({
+        "max_retries": 3,
+        "user_agent": "hf-to-cb-migrator/1.0",
+    })
+    
+    config_name = "0core_last_out_All_Beauty"
+    result = cli_runner.invoke(
+        main,
+        [
+            'migrate',
+            '--path', DATASET_PATH_WITH_NAME,
+            '--name', config_name,
+            '--split', 'train',
+            '--id-fields', 'user_id',
+            '--download-config', download_config,
+            '--trust-remote-code',
+            '--token', HUGGINGFACE_TOKEN,
+            '--cb-scope', 'test_scope_download',
+            '--cb-collection', 'test_collection_download'
+        ],
+        input=couchbase_inputs
+    )
+    assert result.exit_code == 0
+    assert "Migration completed successfully." in result.output
+
+    expected_fields = ['user_id']
+    assert validate_migrated_data(
+        COUCHBASE_URL,
+        COUCHBASE_USERNAME,
+        COUCHBASE_PASSWORD,
+        COUCHBASE_BUCKET,
+        'test_scope_download',
+        'test_collection_download',
+        expected_fields,
+        expected_count=1
+    )
