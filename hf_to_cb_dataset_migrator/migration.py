@@ -412,7 +412,7 @@ class DatasetMigrator:
 
         except Exception as e:
             import traceback
-            print(f"Error: {e}\nTraceback:\n{traceback.format_exc()}")
+            logger.debug(f"Error: {e}\nTraceback:\n{traceback.format_exc()}")
             raise
         finally:
             self.close()
