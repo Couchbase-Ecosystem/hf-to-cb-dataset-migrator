@@ -1,7 +1,7 @@
 import logging
 import uuid
 import time
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Any, Dict, List, Union, Optional, Sequence, Mapping, Callable
 
 from couchbase.auth import PasswordAuthenticator
@@ -357,10 +357,9 @@ class DatasetMigrator:
                 'trust_remote_code': trust_remote_code,
             }
 
+            load_kwargs.update(config_kwargs)
             # Remove None values
             load_kwargs = {k: v for k, v in load_kwargs.items() if v is not None}
-
-            load_kwargs.update(config_kwargs)
 
             # Parse id_fields into a list
             id_fields_list = [field.strip() for field in id_fields.split(',')] if id_fields else None
@@ -412,9 +411,23 @@ class DatasetMigrator:
             logger.info(f"Migration completed successfully. Total records migrated: {total_records}")
 
         except Exception as e:
+            import traceback
+            print(f"Error: {e}\nTraceback:\n{traceback.format_exc()}")
             raise
         finally:
             self.close()
+
+    def _convert_datetime(self, obj: Any) -> Any:
+        """Recursively convert datetime objects to ISO format strings."""
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        elif hasattr(obj, 'isoformat'):
+            return obj.isoformat()
+        elif isinstance(obj, dict):
+            return {k: self._convert_datetime(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [self._convert_datetime(item) for item in obj]
+        return obj
 
     def _process_and_insert_split(
         self,
@@ -445,6 +458,9 @@ class DatasetMigrator:
                 if not isinstance(example, dict):
                     example = dict(example)
                     
+                # Convert datetime objects recursively
+                example = self._convert_datetime(example)
+                
                 doc_id = construct_doc_id(example)
                 example_with_split = dict(example)
                 if split_name is not None:
