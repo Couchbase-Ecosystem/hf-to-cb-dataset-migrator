@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Union, Optional, Sequence, Mapping, Callable
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
 from couchbase.collection import Collection
-from couchbase.management.collections import CollectionManager, CollectionSpec
 from couchbase.exceptions import CouchbaseException, DocumentExistsException, ScopeAlreadyExistsException, CollectionAlreadyExistsException
 from couchbase.options import ClusterOptions, KnownConfigProfiles
 from couchbase.result import MultiMutationResult
@@ -83,9 +82,8 @@ class DatasetMigrator:
                 collection_names = [collection.name for collection in scope.collections]
                 if cb_collection not in collection_names:
                     logger.info(f"Collection '{cb_collection}' does not exist in scope '{cb_scope}'. Creating collection.")
-                    collection_spec = CollectionSpec(cb_collection, scope_name=cb_scope)
                     try:
-                        collection_manager.create_collection(collection_spec)
+                        collection_manager.create_collection(scope_name=cb_scope, collection_name=cb_collection)
                     except CollectionAlreadyExistsException:
                         logger.info(f"Collection '{cb_collection}' already exists in scope '{cb_scope}'.")
 
@@ -110,7 +108,7 @@ class DatasetMigrator:
                 scope = bucket.scope(cb_scope)
                 self.collection = scope.collection(cb_collection)
             else:
-                self.collection = bucket.default_collection()
+                raise Exception("Scope and collection must be provided")
         except CouchbaseException as e:
             raise Exception(f"Failed to connect to Couchbase cluster: {e}")
 

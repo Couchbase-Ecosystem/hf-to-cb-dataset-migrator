@@ -177,7 +177,7 @@ def test_migrate_with_invalid_config(cli_runner, couchbase_inputs, cleanup_colle
             '--split', 'train[:1%]',
             '--cb-scope', 'test_scope',
         ],
-        input=couchbase_inputs,
+        input=couchbase_inputs + '\n' + 'test_collection',
         catch_exceptions=False
     )
     assert result.exit_code != 0

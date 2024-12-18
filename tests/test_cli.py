@@ -52,10 +52,10 @@ class TestCLI(unittest.TestCase):
         mock_migrator_class.return_value = mock_migrator
 
         # Mock input prompts for Couchbase credentials
-        inputs = '\n'.join(['couchbase://localhost', 'user', 'pass', 'bucket'])
+        inputs = '\n'.join(['couchbase://localhost', 'user', 'pass', 'bucket', 'test-scope', 'test-collection'])
 
         # Test with minimum options
-        result = self.runner.invoke(main, ['migrate', '--path', 'test_dataset', '--id-fields', 'id', '--cb-scope', 'test-scope'], input=inputs)
+        result = self.runner.invoke(main, ['migrate', '--path', 'test_dataset', '--id-fields', 'id'], input=inputs)
         # Assert that the migrate_dataset method was called with the correct arguments
         mock_migrator.migrate_dataset.assert_called_once_with(
             path='test_dataset',
@@ -64,7 +64,7 @@ class TestCLI(unittest.TestCase):
             cb_password='pass',
             cb_bucket='bucket',
             cb_scope='test-scope', 
-            cb_collection=None, 
+            cb_collection='test-collection', 
             id_fields='id',
             name=None, 
             data_files=None, 
@@ -135,7 +135,7 @@ class TestCLI(unittest.TestCase):
         batch_size=1000
     )
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("Starting migration of dataset 'test_dataset' to Couchbase bucket 'bucket'...", result.output)
+        self.assertIn("Starting migration of dataset 'test_dataset' to Couchbase bucket 'bucket' scope 'scope' collection 'collection'...", result.output)
         self.assertIn("Migration completed successfully.", result.output)
 
     @patch('hf_to_cb_dataset_migrator.cli.DatasetMigrator')
@@ -186,7 +186,7 @@ class TestCLI(unittest.TestCase):
             batch_size=1000
         )
         self.assertEqual(result.exit_code, 1)
-        self.assertIn("Starting migration of dataset 'test_dataset' to Couchbase bucket 'bucket'...", result.output)
+        self.assertIn("Starting migration of dataset 'test_dataset' to Couchbase bucket 'bucket' scope 'scope' collection 'collection'...", result.output)
         self.assertIn("Migration failed", result.output)
 
     def test_main_help(self):
@@ -242,7 +242,8 @@ class TestCLI(unittest.TestCase):
                 '--cb-username', 'user',
                 '--cb-password', 'pass',
                 '--cb-bucket', 'test_bucket',
-                '--cb-scope', 'scope'
+                '--cb-scope', 'scope',
+                '--cb-collection', 'collection'
             ]
         )
 
@@ -253,7 +254,9 @@ class TestCLI(unittest.TestCase):
         self.assertIn('"cb_url": "couchbase://localhost"', result.output)
         self.assertIn('"cb_username": "user"', result.output)
         self.assertIn('"cb_password": "pass"', result.output)
-        self.assertIn('"cb_bucket": "test_bucket"', result.output)    
+        self.assertIn('"cb_bucket": "test_bucket"', result.output)
+        self.assertIn('"cb_scope": "scope"', result.output)
+        self.assertIn('"cb_collection": "collection"', result.output)
 
     @patch('hf_to_cb_dataset_migrator.cli.DatasetMigrator')
     def test_list_fields_with_split(self, mock_migrator_class):
@@ -274,8 +277,10 @@ class TestCLI(unittest.TestCase):
             path='test_dataset',
             name=None,
             data_files=None,
+            download_config=None,
             revision=None,
-            split='train'
+            split='train',
+            trust_remote_code=None
         )
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Fields:", result.output)
@@ -305,8 +310,10 @@ class TestCLI(unittest.TestCase):
             path='test_dataset',
             name='config1',
             data_files=['file1.csv', 'file2.csv'],
+            download_config=None,
             revision='1.0.0',
-            split='train'
+            split='train',
+            trust_remote_code=None
         )
         self.assertEqual(result.exit_code, 0)
         self.assertIn('"field1"', result.output)

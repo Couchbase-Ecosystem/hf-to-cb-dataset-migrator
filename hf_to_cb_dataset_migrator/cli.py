@@ -313,8 +313,8 @@ migrate_help = generate_help("Migrate datasets from Hugging Face to Couchbase.",
 @click.option('--cb-password', prompt=True, hide_input=True, confirmation_prompt=False,
               help='Password for Couchbase authentication.')
 @click.option('--cb-bucket', prompt='Couchbase bucket name', help='Couchbase bucket to store data.')
-@click.option('--cb-scope', required=True, help='Couchbase scope name.')
-@click.option('--cb-collection', default=None, help='Couchbase collection name (optional).')
+@click.option('--cb-scope', prompt='Couchbase scope name', help='Couchbase scope name.')
+@click.option('--cb-collection', prompt='Couchbase collection name', help='Couchbase collection name (optional).')
 @click.option('--cb-batch-size', default=DEFAULT_BATCH_SIZE, type=int, help=f'Number of documents to insert per batch (default: {DEFAULT_BATCH_SIZE}).')
 @click.option('--debug', is_flag=True, help='Enable debug output.')
 @click.pass_context
@@ -345,7 +345,7 @@ def migrate(
             sys.exit(1)
 
 
-    click.echo(f"Starting migration of dataset '{path}' to Couchbase bucket '{cb_bucket}'...")
+    click.echo(f"Starting migration of dataset '{path}' to Couchbase bucket '{cb_bucket}' scope '{cb_scope}' collection '{cb_collection}'...")
     migrator = DatasetMigrator(token=token)
 
     # Prepare data_files

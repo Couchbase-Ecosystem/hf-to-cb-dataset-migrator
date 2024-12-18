@@ -235,9 +235,7 @@ class TestDatasetMigrator(unittest.TestCase):
 
         # Since the collection did not exist, create_collection should be called
         mock_collection_manager.create_collection.assert_called_once()
-        collection_spec = mock_collection_manager.create_collection.call_args[0][0]
-        self.assertEqual(collection_spec.scope_name, 'test_scope')
-        self.assertEqual(collection_spec.name, 'test_collection')
+        mock_collection_manager.create_collection.assert_called_with(scope_name='test_scope', collection_name='test_collection')
 
     @patch('hf_to_cb_dataset_migrator.migration.Cluster')
     def test_connect_create_scope_and_collection_exceptions(self, mock_cluster_class):
@@ -296,9 +294,8 @@ class TestDatasetMigrator(unittest.TestCase):
         # Assertions
         mock_collection_manager.create_scope.assert_called_once_with('test_scope')
         mock_collection_manager.create_collection.assert_called_once()
-        collection_spec = mock_collection_manager.create_collection.call_args[0][0]
-        self.assertEqual(collection_spec.scope_name, 'test_scope')
-        self.assertEqual(collection_spec.name, 'test_collection')
+        mock_collection_manager.create_collection.assert_called_with(scope_name='test_scope', collection_name='test_collection')
+        
 
     @patch('hf_to_cb_dataset_migrator.migration.Cluster')
     def test_connect_scope_and_collection_exist(self, mock_cluster_class):
