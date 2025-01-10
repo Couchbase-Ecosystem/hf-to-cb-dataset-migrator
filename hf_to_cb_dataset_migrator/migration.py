@@ -19,6 +19,7 @@ from datasets.utils.info_utils import VerificationMode
 from datasets.utils.logging import set_verbosity_error
 from datasets.arrow_dataset import Dataset
 from datasets.iterable_dataset import IterableDataset
+from huggingface_hub.utils import disable_progress_bars
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class DatasetMigrator:
         self.token = token
         self.cluster: Optional[Cluster] = None
         self.collection: Optional[Collection] = None
+        disable_progress_bars()
 
     def connect(
         self,
