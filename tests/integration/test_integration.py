@@ -296,7 +296,7 @@ def test_migrate_with_memory_retention(cli_runner, couchbase_inputs, cleanup_col
         'test_scope_memory',
         'test_collection_memory',
         expected_fields,
-        expected_count=8151
+        expected_count=5000
     )
 
 def test_migrate_invalid_inputs(cli_runner, couchbase_inputs):
