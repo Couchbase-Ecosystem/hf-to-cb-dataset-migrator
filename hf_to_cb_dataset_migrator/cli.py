@@ -4,7 +4,7 @@ import click
 import json
 import os
 import sys
-from hf_to_cb_dataset_migrator.migration import DatasetMigrator
+from hf_to_cb_dataset_migrator.migration import DatasetMigrator, hf_disable_progress_bars
 from hf_to_cb_dataset_migrator.utils import generate_help
 from typing import Any, Optional
 import logging
@@ -59,6 +59,7 @@ def list_configs_cmd(ctx, path, revision, download_config, download_mode, dynami
         pre_function(ctx)
         return
     if json_output:
+        hf_disable_progress_bars()
         logging.basicConfig(level=logging.ERROR)   
     elif debug:
         logging.basicConfig(level=logging.DEBUG)
@@ -134,6 +135,7 @@ def list_splits_cmd(ctx, path, config_name, data_files, download_config, downloa
         return
     
     if json_output:
+        hf_disable_progress_bars()
         logging.basicConfig(level=logging.ERROR)   
     elif debug:
         logging.basicConfig(level=logging.DEBUG)
@@ -205,6 +207,7 @@ def list_fields(ctx, path, name, data_files, download_config, revision, token, s
         return
     
     if json_output:
+        hf_disable_progress_bars()
         logging.basicConfig(level=logging.ERROR)   
     elif debug:
         logging.basicConfig(level=logging.DEBUG)

@@ -23,6 +23,13 @@ from huggingface_hub.utils import disable_progress_bars
 
 logger = logging.getLogger(__name__)
 
+def hf_disable_progress_bars():
+    """
+    Disables any Hugging Face Hub progress bars. 
+    Useful if you want to ensure no progress bars 
+    appear in CLI tools or scripts.
+    """
+    disable_progress_bars()
 
 class DatasetMigrator:
     def __init__(self, token: Optional[str] = None):
@@ -34,7 +41,6 @@ class DatasetMigrator:
         self.token = token
         self.cluster: Optional[Cluster] = None
         self.collection: Optional[Collection] = None
-        disable_progress_bars()
 
     def connect(
         self,
