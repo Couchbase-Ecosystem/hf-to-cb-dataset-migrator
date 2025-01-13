@@ -9,6 +9,8 @@ from hf_to_cb_dataset_migrator.utils import generate_help
 from typing import Any, Optional
 import logging
 import multiprocessing
+import pkg_resources
+import importlib.metadata
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -29,6 +31,16 @@ def pre_function(ctx: click.Context) -> None:
 def main():
     """CLI tool to interact with Hugging Face datasets and migrate them to Couchbase."""
     pass
+
+@main.command('version')
+def version():
+    """Display the version of hf_to_cb_dataset_migrator."""
+    try:
+        version = importlib.metadata.version('hf_to_cb_dataset_migrator')
+        click.echo(f"hf_to_cb_dataset_migrator version {version}")
+    except importlib.metadata.PackageNotFoundError:
+        click.echo("Version information not available", err=True)
+        sys.exit(1)
 
 list_configs_help = generate_help("List all configuration names for a given dataset.",[
     f"{prog_name} list-configs --path dataset.",
