@@ -35,7 +35,7 @@ def main():
 @main.command('version')
 def version():
     """Display the version of hf_to_cb_dataset_migrator."""
-    click.echo(f"hf_to_cb_dataset_migrator version {__version__}")
+    click.echo(f"v{__version__}")
 
 list_configs_help = generate_help("List all configuration names for a given dataset.",[
     f"{prog_name} list-configs --path dataset.",
