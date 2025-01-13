@@ -4,6 +4,7 @@ import click
 import json
 import os
 import sys
+from hf_to_cb_dataset_migrator import __version__
 from hf_to_cb_dataset_migrator.migration import DatasetMigrator, hf_disable_progress_bars
 from hf_to_cb_dataset_migrator.utils import generate_help
 from typing import Any, Optional
@@ -34,12 +35,7 @@ def main():
 @main.command('version')
 def version():
     """Display the version of hf_to_cb_dataset_migrator."""
-    try:
-        version = importlib.metadata.version('hf_to_cb_dataset_migrator')
-        click.echo(f"hf_to_cb_dataset_migrator version {version}")
-    except importlib.metadata.PackageNotFoundError:
-        click.echo("Version information not available", err=True)
-        sys.exit(1)
+    click.echo(f"hf_to_cb_dataset_migrator version {__version__}")
 
 list_configs_help = generate_help("List all configuration names for a given dataset.",[
     f"{prog_name} list-configs --path dataset.",

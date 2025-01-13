@@ -35,12 +35,10 @@ Source = "https://github.com/Couchbase-Ecosystem/hf-to-cb-dataset-migrator"
 packages = ["hf_to_cb_dataset_migrator"]
 
 [tool.hatch.version]
-source = "vcs"
-tag-pattern = 'v(?P<version>.*)'
+path = "hf_to_cb_dataset_migrator/__about__.py"
 
 [tool.hatch.version.raw-options]
 root = "./"
-git_describe_command = 'git describe --tags --match="v[0-9]*"'
 
 
 # Define environments for development and testing
