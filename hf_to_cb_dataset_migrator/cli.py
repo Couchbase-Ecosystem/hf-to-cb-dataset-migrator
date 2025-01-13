@@ -9,7 +9,6 @@ from hf_to_cb_dataset_migrator.utils import generate_help
 from typing import Any, Optional
 import logging
 import multiprocessing
-import pkg_resources
 import importlib.metadata
 
 logger = logging.getLogger(__name__)
